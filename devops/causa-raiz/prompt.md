@@ -66,7 +66,10 @@ Sintoma relatado    : {{sintoma_relatado}}
 - Correlação temporal não é causalidade: quando duas séries se movem juntas,
   diga qual se move primeiro e por que isso sustenta a direção da causa.
 
-## Saída (nesta estrutura)
+## Saída
+Seja conciso: no máximo 10 linhas no total. Resuma as seções abaixo em texto corrido.
+
+(estrutura de referência)
 1. Bottom line (2–3 frases): causa-raiz em uma frase + nível de confiança.
 2. Linha do tempo correlacionada (métrica ↔ log ↔ config).
 3. Cadeia causal: gatilho → mecanismo → sintomas.

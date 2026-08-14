@@ -57,6 +57,7 @@ reversível. Não detalhe as demais fases.
   caminho de volta funciona.
 
 [FORMATO DE SAÍDA]
+Seja breve: no máximo 12 linhas. Descreva em texto corrido, sem seções separadas.
 Markdown com as seções: `## Pré-checagens`, `## Execução` (numerada),
 `## Portões de validação`, `## Rollback` (com o critério de abort em negrito),
 `## Definition of Done`. Linguagem imperativa e verificável.
