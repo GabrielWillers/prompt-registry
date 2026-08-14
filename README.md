@@ -28,7 +28,16 @@ _Nenhum prompt cadastrado ainda._
 
 Pipelines de CI/CD, containers, orquestração, infraestrutura como código, observabilidade, SRE e segurança operacional.
 
-_Nenhum prompt cadastrado ainda._
+Abriga o **playbook de IA operacional da Aegis** — 8 prompts de plantão, diagnóstico, decisão de arquitetura, migração e segurança:
+
+- [triagem-de-pods](./devops/triagem-de-pods/) — transforma um snapshot estático de um namespace Kubernetes em triagem com causa provável por pod e próxima ação do plantão.
+- [nota-de-triagem-de-alerta](./devops/nota-de-triagem-de-alerta/) — converte um alerta bruto de monitoramento na nota de triagem padronizada de cinco campos usada na passagem de turno.
+- [causa-raiz-de-degradacao](./devops/causa-raiz-de-degradacao/) — cruza configuração, métricas e logs de uma janela de incidente para chegar à causa-raiz com cadeia causal ancorada em evidência.
+- [decisao-de-arquitetura-com-tradeoffs](./devops/decisao-de-arquitetura-com-tradeoffs/) — compara caminhos alternativos contra restrições duras e brandas antes de recomendar, expondo o que cada opção sacrifica.
+- [diagnostico-de-acoplamento-para-migracao](./devops/diagnostico-de-acoplamento-para-migracao/) — mapeia acoplamentos, invariantes e falhas silenciosas de um sistema antes de qualquer proposta de migração _(elo 1 de 3)_.
+- [plano-faseado-de-migracao](./devops/plano-faseado-de-migracao/) — quebra uma migração em fases incrementais e reversíveis a partir do diagnóstico, com critério de saída e rollback por fase _(elo 2 de 3)_.
+- [runbook-de-fase-de-migracao](./devops/runbook-de-fase-de-migracao/) — detalha uma fase do plano como runbook executável, com portões de validação e rollback com critério objetivo de abort _(elo 3 de 3)_.
+- [endurecimento-de-networkpolicy](./devops/endurecimento-de-networkpolicy/) — converte um manifesto de NetworkPolicy permissivo em política default-deny mínima, com regras comentadas e autoverificação de segurança.
 
 ### [Produtividade](./produtividade/)
 
