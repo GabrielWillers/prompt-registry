@@ -1,5 +1,19 @@
 # Catálogo de prompts
 
+> **Entrega do desafio Operação Aegis.** Este repositório é a biblioteca de
+> prompts do playbook de IA operacional da Aegis, construída ao longo dos
+> Checkpoints 01 a 09.
+>
+> - **A biblioteca** — 8 prompts parametrizáveis em [`devops/`](./devops/), cada
+>   um com `prompt.md`, `README.md` e, quando a saída é verificável,
+>   `promptfooconfig.yaml`.
+> - **As entregas dos checkpoints** — prompt, execução com modelo e output, e
+>   curadoria de cada um, em [`checkpoints/`](./checkpoints/).
+> - **Testes** — 4 prompts têm suíte executável: 3 determinísticos (CP08) e 1
+>   com gate de qualidade por LLM-as-judge (CP09). Veja
+>   [como rodar](#rodando-os-testes).
+
+
 Coleção de prompts em Markdown organizados por categoria/área de domínio. Cada prompt vive em sua própria pasta, contendo o arquivo `prompt.md` (texto puro, pronto para copiar e colar) e um `README.md` com metadados, variáveis e exemplos de uso.
 
 Este repositório faz parte do material dos projetos da pós-graduação em AIOps e Inteligência Artificial com Engenharia Cloud: [pos.veronez.io/pos-aiops](https://pos.veronez.io/pos-aiops/).
@@ -70,6 +84,26 @@ categorias são as pastas de domínio acima. Ela guarda os documentos de entrega
 desafio que originou este playbook: para cada checkpoint, o prompt, a execução
 com modelo e output, e a curadoria. É o registro de **como** a biblioteca foi
 construída; a biblioteca em si está em [`devops/`](./devops/).
+
+## Rodando os testes
+
+Requer **Node ≥ 22.22** e chaves dos dois providers:
+
+```bash
+export OPENAI_API_KEY=...   # openai:gpt-4o-mini (e o juiz gpt-4o no CP09)
+export GOOGLE_API_KEY=...   # google:gemini-3.1-flash-lite
+
+cd devops/nota-de-triagem
+npx promptfoo@0.122.0 eval -c promptfooconfig.yaml --no-cache -j 2 --delay 2000
+```
+
+O `-j 2 --delay 2000` existe por causa do limite de 20 req/min do free tier do
+Gemini; com conta paga, rode sem eles.
+
+Prompts com suíte: [`nota-de-triagem`](./devops/nota-de-triagem/),
+[`triagem-de-pods`](./devops/triagem-de-pods/),
+[`networkpolicy-sentinel`](./devops/networkpolicy-sentinel/) e
+[`causa-raiz`](./devops/causa-raiz/) — este último com gate por LLM-as-judge.
 
 ## Contribuindo
 

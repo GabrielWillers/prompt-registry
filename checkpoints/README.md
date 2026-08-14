@@ -23,7 +23,7 @@ A biblioteca em si vive em [`devops/`](../devops/). Estes documentos contam
 
 ## Como ler
 
-- **`checkpoint-NN.md`** — o documento da entrega.
+- **`checkpoint-NN.md`** — o documento da entrega. Todos seguem o mesmo nome.
 - **`saidas-dos-modelos.md`** (CP08 e CP09) — as saídas integrais geradas pelos
   modelos, que é o material que os testes avaliaram.
 - **`saida-*.txt`** — o resultado bruto do `promptfoo eval`.

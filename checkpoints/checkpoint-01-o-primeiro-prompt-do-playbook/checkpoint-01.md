@@ -1,0 +1,188 @@
+# Checkpoint 01 — `sre.k8s.triagem-pods` v1.0.0
+
+O item está em [`sre-k8s-triagem-pods.v1.0.0.md`](./sre-k8s-triagem-pods.v1.0.0.md),
+já no formato que proponho como padrão da biblioteca: front-matter com id,
+versão, owner e contrato de parâmetros; o prompt em bloco literal (copiável sem
+edição); casos de teste; limitações. A partir do checkpoint 09/10 esses casos de
+teste viram os asserts do pipeline.
+
+**Parâmetros:** `{{SNAPSHOT}}` e `{{NAMESPACE}}` obrigatórios; `{{CLUSTER}}`,
+`{{JANELA_COLETA}}`, `{{CONTEXTO_OPERACIONAL}}` e `{{POLITICA_ACAO}}` opcionais
+com default. O último é o que mais muda a saída na prática — a recomendação para
+um plantonista com acesso de escrita não é a mesma de quem só pode ler.
+
+Construído por meta-prompting em três rodadas (geração → crítica adversarial
+contra a Entrada 3 → refino do contrato de saída).
+
+---
+
+## Execução
+
+**Modelo:** Claude Opus 5, chat, temperatura padrão. Parâmetros fixos nas três
+rodadas: `NAMESPACE=sentinel-prod`, `CLUSTER=aegis-prod-use1`,
+`JANELA_COLETA=2026-05-13 11:05 BRT`, `CONTEXTO_OPERACIONAL` vazio,
+`POLITICA_ACAO` no default.
+
+### Entrada 1 — pod reiniciando
+
+```
+TRIAGEM — sentinel-prod @ 2026-05-13 11:05 BRT
+Veredito: DEGRADADO — sentinel-api rodando com metade da capacidade por estouro
+de memória no startup.
+Pods: 4 total · 3 OK · 1 problema
+
+1. sentinel-api-7d9c8b6f4-h4m2t — CrashLoopBackOff · severidade ALTA
+
+Sintoma: 14 reinícios em 42 minutos, último há 90s; container nunca chega a ficar Ready.
+
+Causa provável (confiança: alta): o processo estoura o limite de 512Mi ao carregar
+o cache de alertas de 6h no startup e é morto pelo kernel antes de completar a
+inicialização — o ciclo se repete a cada tentativa.
+
+Evidência: Reason: OOMKilled / Exit Code: 137; [cache] loading 6h alert cache
+(heap 410Mi/512Mi) seguido de [FATAL] out of memory 24s depois; Limits: memory: 512Mi.
+
+Impacto: 1 de 2 réplicas de sentinel-api fora. A réplica 2xk9p (6d de uptime)
+sustenta o tráfego, mas roda o mesmo ReplicaSet 7d9c8b6f4 e o mesmo limite — se ela
+reiniciar por qualquer motivo, cai no mesmo laço e o serviço vai a zero. Trate como
+risco de indisponibilidade total, não como falha isolada.
+
+Ação agora: subir o limite de memória do deployment para 1Gi e o request para 512Mi
+(o request de 256Mi está abaixo do heap observado só na carga do cache) —
+kubectl set resources deploy/sentinel-api -n sentinel-prod --limits=memory=1Gi
+--requests=memory=512Mi [requer aprovação]. Se houver flag de configuração da janela
+do cache, reduzir de 6h é a mitigação mais barata e reversível.
+
+Se não resolver: o pod voltar a morrer com 1Gi indica vazamento e não
+dimensionamento — coletar kubectl logs --previous completo e o heap profile da
+versão 2.9.1.
+
+Ações imediatas
+
+1. Ajustar limite/request de memória do sentinel-api (ou reduzir a janela do cache).
+2. Confirmar que 2xk9p segue Ready durante o rollout — não reinicie as duas réplicas
+   ao mesmo tempo.
+3. Registrar o incidente: o gatilho é crescimento de dado, então vai voltar quando o
+   cache crescer de novo.
+
+Lacunas de coleta
+
+- Sem kubectl top pod não dá para saber o consumo em regime da réplica saudável:
+  kubectl top pod -n sentinel-prod.
+- Sem histórico de deploy: kubectl rollout history deploy/sentinel-api -n sentinel-prod
+  diz se 2.9.1 é recente.
+```
+
+### Entrada 2 — pods que não sobem
+
+```
+TRIAGEM — sentinel-prod @ 2026-05-13 11:05 BRT
+Veredito: CRÍTICO — ingestão parada por falta de CPU no cluster e rollout do
+sentinel-api travado em imagem inexistente.
+Pods: 4 total · 2 OK · 2 problema
+
+1. sentinel-ingest-8f7a9c5b-4dkqm — Pending · severidade ALTA
+
+Sintoma: 8 minutos sem ser agendado; nenhum nó aceita o pod.
+
+Causa provável (confiança: alta): o pod pede 2 CPUs e nenhum dos 6 nós tem 2 CPUs
+alocáveis livres. É capacidade do cluster, não defeito do pod — ele nunca chegou a
+executar. Alternativa a considerar: os pods do rollout do sentinel-api já estão
+agendados e reservam CPU mesmo presos em ImagePullBackOff, então podem estar
+consumindo a folga que faltou aqui.
+
+Evidência: 0/6 nodes are available: 6 Insufficient cpu; Requests: cpu: 2.
+
+Impacto: é o único pod de sentinel-ingest no snapshot. Se a réplica é única, a
+ingestão de telemetry está parada há 8 minutos — impacto de produto, não só de
+infra. Confirme a contagem esperada de réplicas antes de assumir.
+
+Ação agora: kubectl describe nodes -n sentinel-prod | grep -A5 "Allocated resources"
+para ver onde a CPU está comprometida; em seguida liberar capacidade (item 2 abaixo)
+ou escalar o node pool [requer aprovação].
+
+Se não resolver: avaliar se o request de 2 CPUs é real ou herdado — request
+superdimensionado é causa comum de Pending permanente.
+
+2. sentinel-api-7d9c8b6f4-zzp10 — ImagePullBackOff · severidade MÉDIA
+
+Sintoma: falha em baixar a imagem sentinel-api:2.9.2 há 7 minutos; rollout parado
+no meio.
+
+Causa provável (confiança: alta): a tag 2.9.2 não existe no registry. O erro é
+manifest unknown, que é resposta de artefato ausente — não é problema de credencial
+(seria unauthorized) nem de rede. O cenário típico é deploy disparado antes do push
+da imagem, ou tag digitada errada.
+
+Evidência: Failed to pull image ... : manifest unknown; Image:
+registry.aegis.io/sentinel-api:2.9.2.
+
+Impacto: o pod antigo 2xk9p (2.9.1) segue Ready e atendendo, então não há perda de
+serviço — mas o deployment está em estado misto e o pod preso reserva recursos no nó.
+
+Ação agora: kubectl rollout undo deploy/sentinel-api -n sentinel-prod para devolver
+o deployment à 2.9.1 e liberar a reserva [requer aprovação]. Em paralelo, confirmar
+no registry se a 2.9.2 foi publicada.
+
+Se não resolver: se a tag existir no registry, o problema muda de natureza e vira
+credencial ou cache de nó — checar o imagePullSecret do namespace.
+
+Ações imediatas
+
+1. rollout undo do sentinel-api — resolve um problema e possivelmente devolve CPU
+   ao cluster.
+2. Reavaliar o Pending do sentinel-ingest logo depois; se persistir, escalar o node pool.
+3. Avisar quem disparou o deploy da 2.9.2 antes que alguém repita o rollout.
+
+Lacunas de coleta
+
+- Sem logs dos dois pods, e isso é esperado: nenhum dos containers chegou a iniciar.
+- Falta o número de réplicas desejado do sentinel-ingest: kubectl get deploy -n sentinel-prod.
+- Falta a distribuição de CPU por nó: kubectl describe nodes.
+```
+
+### Entrada 3 — tudo saudável
+
+```
+TRIAGEM — sentinel-prod @ 2026-05-13 11:05 BRT
+Veredito: SAUDÁVEL — 4 de 4 pods Running e Ready, logs sem erro na janela coletada.
+
+Os logs do sentinel-api-2xk9p mostram operação normal: health check OK, 4.2k
+alertas/min e p99 de 120ms.
+
+Atenção (não exige ação agora): sentinel-worker-5b8f9c8d-jq7rs tem 1 reinício
+ocorrido há 3 dias, com o pod Ready desde então. Reinício isolado e antigo não
+caracteriza problema; só vale investigar se voltar a acontecer.
+
+Nenhuma ação necessária para o plantão.
+```
+
+---
+
+## Curadoria
+
+**O que a IA entregou e eu rejeitei.** A v0 do meta-prompting pedia "identifique
+os pods com problema e explique a causa" — e o modelo respondia parafraseando o
+STATUS ("o pod está em CrashLoopBackOff porque o container falha ao iniciar").
+Virou proibição explícita, mais a exigência de cruzar duas fontes antes de
+afirmar causa. A v0 também mandava expor o raciocínio passo a passo no output:
+bom para auditoria, péssimo para quem lê no celular às três da manhã. Comprimi
+para o campo Evidência, que é o raciocínio auditável sem a narração.
+
+**O que precisou ser adicionado.** O caso saudável quebrou duas versões: sem
+instrução de caso-limite, o modelo entregava recomendações inventadas de
+capacidade sobre um cluster sem defeito algum — o pior erro possível num playbook
+de plantão, porque queima a confiança no item inteiro. Daí nasceram o bloco CASO
+SEM PROBLEMA e a lista explícita do que não é problema (o restart antigo do
+worker existe na Entrada 3 justamente como armadilha). Adicionei também confiança
+e lacunas de coleta: um prompt de triagem que não sabe dizer quando não sabe é
+pior que nenhum, e nomear o comando que traz o dado faltante fecha o ciclo com
+quem tem acesso ao cluster.
+
+**Decisões de biblioteca.** Parametrizei POLITICA_ACAO porque a ação recomendada
+muda conforme o plantonista possa ou não mexer em produção — sem isso o prompt só
+serve a um perfil de time. E o campo Impacto foi o que mais agregou nas
+execuções: é dele que saem as duas leituras não óbvias — na Entrada 1, que a
+réplica sobrevivente roda o mesmo limite e o serviço está a um restart do zero;
+na Entrada 2, que os pods presos em ImagePullBackOff podem ser a causa do Pending
+do ingest.
