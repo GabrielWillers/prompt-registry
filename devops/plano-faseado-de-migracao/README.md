@@ -59,31 +59,42 @@ numeradas justamente para que este elo possa referenciá-las.
 | `objetivo_migracao` | consumir do Relay continuamente, processando em pequenos blocos no lugar do lote de 1h |
 | `restricoes` | manter dependentes funcionando durante a transição; nada de virada única; cada passo reversível |
 
-**Configuração de execução:** Claude Opus 4.8, temperatura `0.2`.
-
-**Forma da saída esperada** — fases ordenadas, cada uma no mesmo molde:
+**Saída (Claude Opus 5, temperatura `0.2`)** — 6 fases. Uma delas, no molde
+completo:
 
 ```markdown
-### Fase 3 — Parallel-run do consumidor de eventos
-- **Objetivo:** rodar o caminho event-driven em shadow, sem servir ninguém.
-- **Invariantes protegidas:** I1, I2
-- **Critério de entrada:** consumidor implantado e lendo do Relay.
-- **Critério de saída:** divergência entre saída batch e saída streaming abaixo
-  de 0,1% em 7 partições horárias consecutivas.
-- **Rollback:** desligar o consumidor shadow — nenhum dependente é afetado.
-- **Risco residual:** custo de infra dobrado durante a janela de comparação.
+### Fase 4 — Parallel-run com comparação automatizada
+- **Objetivo:** rodar os dois caminhos e comparar saída contra saída,
+  partição a partição.
+- **Invariantes protegidas:** I1, I3, I6 — é aqui que a semântica de agregação
+  e o tratamento de dado atrasado são provados, não assumidos.
+- **Critério de entrada:** fase 3 concluída.
+- **Critério de saída:** divergência abaixo de 0,1% em contagem e em soma de
+  métrica de billing, em 168 partições horárias consecutivas (7 dias),
+  incluindo ao menos um fechamento de mês ou pico conhecido.
+- **Rollback:** desligar comparação e consumidor; nenhum dependente foi tocado.
+- **Risco residual:** divergência dentro do limiar mas sistemática (viés) pode
+  passar. Mitigar comparando distribuição, não só total.
+```
 
-## Sequência das fases
+A fase 5 (cutover) saiu ordenada por **reversibilidade da falha** — Cerebro →
+Sentinel → billing:
+
+> O Cerebro tem a falha mais reversível (reindexar resolve), o Sentinel tem
+> impacto operacional mas detectável, e o billing tem a falha mais cara e mais
+> silenciosa. O último a migrar é o que menos perdoa.
+
+Essa ordenação vem direto da seção de falhas silenciosas do elo 1 — é o
+resultado que mais justifica encadear em vez de usar um prompt único.
+
 ```mermaid
 flowchart LR
-  F1[Instrumentar baseline] --> F2[Publicar eventos no Relay]
-  F2 --> F3[Parallel-run shadow] --> F4[Cutover por dependente]
-  F4 --> F5[Desligar batch legado]
+  F1[F1 · Inventário<br/>e baseline] --> F2[F2 · Publicar<br/>no Relay]
+  F2 --> F3[F3 · Consumidor<br/>em shadow]
+  F3 --> F4[F4 · Parallel-run<br/>+ comparação]
+  F4 --> F5[F5 · Cutover<br/>Cerebro→Sentinel→billing]
+  F5 --> F6[F6 · Desligar batch<br/>reativável]
 ```
-```
-
-> Nota de estado: a saída integral desta execução não foi arquivada nesta
-> versão. Ao rodar a cadeia, salve o output dos três elos como golden.
 
 **Testes estruturais**
 

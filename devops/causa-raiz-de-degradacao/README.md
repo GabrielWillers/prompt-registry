@@ -80,14 +80,50 @@ decisão de compliance (owner: segurança), não de conveniência.
 | `logs` | log nativo do Elasticsearch de `cerebro-node-3` cobrindo a mesma janela |
 | `contexto_adicional` | vazio |
 
-**Resultado de referência (golden)** — a conclusão que uma execução válida
-precisa alcançar:
+**Saída (Claude Opus 5, temperatura 0.2)** — trechos das seções mais
+representativas:
 
-> A reindexação agendada (task 88123, 02:00) não completou na janela off-peak e
-> passou a concorrer com a ingestão de pico sobre um heap de 8g subdimensionado
-> para carga concorrente (agravado por `refresh_interval: 1s`), levando à
-> exaustão de heap que dispara o circuit breaker e cascateia em cache, fila de
-> escrita e busca.
+*Bottom line*
+
+> A reindexação agendada para as 02:00 não terminou na janela off-peak e ainda
+> rodava às 10:00, sobrepondo sua carga de escrita à rampa de ingestão do
+> horário comercial. Os dois fluxos juntos esgotaram o heap de 8g, o circuit
+> breaker de memória disparou e a busca degradou por consequência. Confiança
+> alta no mecanismo, média na origem do atraso da reindexação.
+
+*Cadeia causal*
+
+```
+GATILHO    reindex 88123 (agendada 02:00, duração média 90min) não fecha na
+           janela off-peak e continua rodando no horário comercial
+           [FATO — 08:02 em 38%; 09:58 em 41%, ETA unknown]
+              ↓
+MECANISMO  carga de escrita da reindexação + rampa de ingestão (4.2k → 12.4k
+           docs/s) competem pelo mesmo heap e pelo mesmo write thread pool,
+           com refresh_interval de 1s multiplicando criação de segmento
+              ↓
+           heap 61% → 94%; GC passa de young 620ms para old 1.8s sem devolver
+           memória; circuit breaker [parent] cruza 86% e dispara em 96%
+              ↓
+SINTOMAS   cache despejado (hit 74% → 29%) → p99 850ms → 6700ms
+           write pool satura (150 → 188 → 200/200) → 1284 bulks rejeitados
+           buscas estouram timeout de 5s → resultado parcial 11/12 shards
+```
+
+*Hipóteses alternativas descartadas* (extrato)
+
+| Hipótese | Por que os dados a descartam |
+|---|---|
+| Pico de volume de **busca** saturou o cluster | Ordem temporal. O throttle de indexação aparece às 08:41; a primeira slow query, só às 09:44. E quem satura é o **write** thread pool, não o de search |
+| Heap de 8g subdimensionado | Às 08:00, com 4.2k docs/s, heap em 61% e p99 em 850ms — operação normal. É condição contribuinte sob carga dupla, não gatilho |
+
+*Sintomas que NÃO são a causa* — heap em 94% (mecanismo), cache em 29%
+(consequência da eviction sob pressão), circuit breaker disparado (proteção
+funcionando), slow query no shard 7 (onde o sintoma aparece primeiro, não onde
+nasce).
+
+*Confiança global* — alta para o mecanismo, média para a origem do gatilho: não
+há dado entre 02:00 e 08:00 explicando por que a reindexação atrasou.
 
 **Critérios de aprovação da execução**
 
@@ -102,9 +138,7 @@ precisa alcançar:
 3. **Declara as lacunas**: não há dado sobre o motivo do atraso do reindex entre
    02:00 e 08:00, nem `qps` de busca. A confiança global precisa refletir isso.
 
-> Nota de estado: os critérios acima estão validados como golden set, mas a
-> transcrição integral da saída do modelo não foi arquivada nesta versão. Ao
-> rodar, salve o output completo junto deste README.
+A execução acima atende aos três critérios e serve como golden desta versão.
 
 ## Limitações conhecidas
 

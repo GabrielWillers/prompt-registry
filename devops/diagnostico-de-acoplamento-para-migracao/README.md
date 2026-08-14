@@ -60,32 +60,45 @@ a uma invariante específica.
 | `objetivo_migracao` | consumir do Relay continuamente, processando em pequenos blocos no lugar do lote de 1h |
 | `restricoes` | manter dependentes funcionando durante a transição; nada de virada única; cada passo reversível |
 
-**Configuração de execução:** Claude Opus 4.8, temperatura `0.2` (biblioteca
-exige reprodutibilidade).
+**Saída (Claude Opus 5, temperatura `0.2`)** — extratos das quatro seções das
+quais o resto da cadeia depende:
 
-**Forma da saída esperada** — quatro seções nomeadas, das quais o resto da
-cadeia depende:
+*Acoplamentos*
 
-```markdown
-## Acoplamentos
-| Dependente | O que consome | Formato | Cadência |
-| Sentinel   | tabelas agregadas por hora | ... | ... |
+| Dependente | O que consome | Cadência | Contrato implícito |
+|---|---|---|---|
+| Sentinel | Tabelas agregadas do warehouse | Dado novo a cada hora | Assume que a partição visível está completa |
+| Cerebro | Eventos transformados | Horária, atrelada ao fim do job | Assume entrega única por evento |
+| Billing | Tabelas particionadas por hora | Diária, de madrugada | Assume que partição fechada nunca muda |
 
-## Invariantes
-- **I1** — a partição horária do warehouse permanece completa e imutável ...
-- **I2** — o billing lê um fechamento estável de madrugada ...
+> O acoplamento decisivo não é o formato — é a **cadência**. Todos os três leem
+> um artefato que só existe porque um lote terminou. O fim do job é o sinal de
+> "pode ler", e esse sinal desaparece no modelo contínuo.
 
-## Riscos priorizados
+*Invariantes* (7 no total)
+
+- **I1** — Uma partição horária visível contém **todos** os eventos daquela hora.
+- **I2** — Partição fechada é **imutável**.
+- **I3** — **Exatamente uma** contagem por evento no warehouse.
+- **I6** — O evento cai na partição da **hora do evento**, não da hora do
+  processamento.
+
+*Riscos priorizados* (extrato)
+
 | Risco | Impacto | Probabilidade | Por quê |
-| Dupla contagem em janela de agregação | Alto | Média | ... |
+|---|---|---|---|
+| Semântica de agregação muda de lote fechado para janela incremental | Alto | Alta | As 14 etapas assumem lote completo em memória — quebra I1 e I3 |
+| Dado atrasado cai na partição errada | Alto | Alta | O lote de 1h absorvia atraso; streaming precisa de watermark, que hoje não existe — quebra I6 |
 
-## Falhas silenciosas por dependente
-- **Billing** — soma parcial sem erro: a query retorna, o número é menor.
-```
+*Falhas silenciosas por dependente*
 
-> Nota de estado: a saída integral desta execução (e a dos elos 2 e 3) não foi
-> arquivada nesta versão. Ao rodar a cadeia, salve o output dos três elos como
-> golden e trate qualquer diff futuro como mudança a revisar.
+- **Sentinel** — lê partição parcial e mostra número menor, sem erro. Pior caso:
+  alerta por limiar **não dispara**. Falso negativo em alerting é invisível por
+  definição.
+- **Billing** — soma parcial ou dupla. A query retorna com sucesso, a fatura
+  sai. O erro é descoberto pelo cliente.
+
+A execução completa dos três elos, no cenário do Forge, é o golden desta versão.
 
 **Testes estruturais** (baratos, verificam contrato e não conteúdo):
 

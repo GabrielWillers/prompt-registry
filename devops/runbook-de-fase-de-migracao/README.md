@@ -57,36 +57,44 @@ fazer, o diagnóstico diz o que não pode quebrar enquanto se faz.
 | `fase_alvo` | `Fase 3 — Parallel-run do consumidor de eventos` |
 | `contexto_tecnico` | Spark no pipeline atual; consumo do Relay; warehouse particionado por hora; deploy via GitOps |
 
-**Configuração de execução:** Claude Opus 4.8, temperatura `0.2`.
+**Saída (Claude Opus 5, temperatura `0.2`)** — 7 passos de execução, 6 portões
+de validação. Extratos:
 
-**Forma da saída esperada**:
+*Pré-checagens*
 
-```markdown
-## Pré-checagens
-1. Confirmar que o lote batch da hora anterior fechou sem erro.
-2. Confirmar retenção do Relay suficiente para reprocessar a janela de teste.
+> 3. Confirmar que as tabelas `*_shadow` estão isoladas — nenhuma grant de
+>    leitura para os papéis do Sentinel, do Cerebro ou do billing. É o que
+>    protege **I3** durante toda a fase.
 
-## Execução
-1. Implantar o consumidor shadow com escrita direcionada a tabelas `_shadow`.
-   **Resultado esperado:** consumer group ativo, lag decrescente.
-2. ...
+*Execução* (passo 3, o mais específico)
 
-## Portões de validação
-- Após o passo 1 — **I1**: a partição horária de produção permanece intocada.
-  Consulta de contagem por partição antes/depois deve dar diferença zero.
+> **Comparar em três níveis, não só no total:** contagem de eventos, soma da
+> métrica de billing e **distribuição por chave** (percentis por tenant).
+> *Por que os três:* total igual com distribuição diferente é o caso que passa
+> no teste e quebra a fatura de um cliente específico.
 
-## Rollback
-**Critério de abort: divergência acima de 1% em qualquer partição, ou lag do
-consumer shadow acima de 15min por mais de 10min seguidos.**
-1. Escalar o consumidor shadow para zero réplicas.
-2. ...
+*Portões de validação*
 
-## Definition of Done
-- 7 partições consecutivas com divergência abaixo de 0,1%.
-```
+| Após o passo | Invariante | Como verificar |
+|---|---|---|
+| 2 | **I3** | Contagem por partição no shadow contra o baseline da fase 1 |
+| 4 | **I2** | Reexecutar a comparação de uma partição já comparada 24h antes: resultado idêntico. Diferença significa que uma partição fechada mudou |
+| 6 | **I6** | O evento atrasado caiu na partição da hora do evento nos dois caminhos |
 
-> Nota de estado: a saída integral desta execução não foi arquivada nesta
-> versão. Ao rodar a cadeia, salve o output dos três elos como golden.
+*Rollback*
+
+> **Critério de abort: divergência de contagem ou de soma de billing acima de 1%
+> em qualquer partição isolada, OU acima de 0,1% em 3 partições consecutivas, OU
+> qualquer divergência na verificação de dado atrasado, OU lag do consumidor
+> acima de 15min por mais de 10min seguidos.**
+>
+> O critério é assimétrico de propósito: 1% pontual pode ser um evento isolado,
+> mas 0,1% que se repete três vezes seguidas é viés sistemático — e viés é pior
+> que ruído, porque não se corrige sozinho.
+>
+> *Ensaio do rollback:* executar os passos 1 a 4 uma vez, deliberadamente, no
+> terceiro dia da fase. Um rollback que nunca foi executado é uma hipótese, não
+> um procedimento.
 
 **Testes estruturais**
 
