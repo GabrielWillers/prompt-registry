@@ -1,10 +1,10 @@
 ---
 nome: Nota de triagem de alerta
 descricao: Converte um alerta bruto de monitoramento na nota de triagem padronizada de cinco campos usada na passagem de turno.
-versao: 1.0.0
+versao: 2.0.0
 tags: [sre, plantao, alerting, padronizacao, incidentes]
 inputs:
-  - nome: alerta_bruto
+  - nome: alerta_cru
     descricao: Texto cru do alerta como saiu do sistema de monitoramento, com horário, sistema e métricas.
   - nome: mapa_escalonamento
     descricao: Mapa de sistema para time responsável pelo escalonamento. Deixe vazio para usar o default embutido no prompt.
@@ -53,7 +53,7 @@ o que garante a regra; os exemplos apenas calibram o nível de detalhe.
 
 | Parâmetro | Valor |
 |---|---|
-| `alerta_bruto` | ver abaixo |
+| `alerta_cru` | ver abaixo |
 | `mapa_escalonamento` | vazio (usa o default) |
 | `contexto_plataforma` | `Relay: ingestão/barramento de eventos. Forge: pipeline de dados e data warehouse. Sentinel: observabilidade e alerting. Cerebro: indexação e busca.` |
 

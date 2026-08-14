@@ -1,10 +1,10 @@
 ---
 nome: Nota de triagem de alerta
 descricao: Converte um alerta bruto de monitoramento na nota de triagem padronizada de cinco campos usada na passagem de turno.
-versao: 1.0.0
+versao: 2.0.0
 tags: [sre, plantao, alerting, padronizacao, incidentes]
 inputs:
-  - nome: alerta_bruto
+  - nome: alerta_cru
     descricao: Texto cru do alerta como saiu do sistema de monitoramento, com horário, sistema e métricas.
   - nome: mapa_escalonamento
     descricao: Mapa de sistema para time responsável pelo escalonamento. Deixe vazio para usar o default embutido no prompt.
@@ -82,9 +82,9 @@ vazio, use este default:
 Se o sistema afetado não estiver no mapa em uso, escreva ESCALAR PARA: @oncall-plataforma
 e sinalize entre colchetes, ao final da linha, que o time responsável não está mapeado.
 
-<alerta_bruto>
-{{alerta_bruto}}
-</alerta_bruto>
+<alerta_cru>
+{{alerta_cru}}
+</alerta_cru>
 
 <instrucao_final>
 Antes de escrever, raciocine internamente (sem mostrar esse raciocínio no

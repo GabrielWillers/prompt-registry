@@ -110,6 +110,34 @@ regra para os próximos prompts:
 7. **`Limitações conhecidas` é obrigatória e específica.** Inclui, quando o
    prompt recebe dado de produção, o que precisa ser sanitizado antes do envio.
 
+## Testes
+
+Prompt de **saída estruturada** tem um `promptfooconfig.yaml` ao lado do
+`prompt.md`, na mesma pasta — o teste viaja junto com o prompt e é parte da
+mesma entrega que a mudança.
+
+```
+<categoria>/<nome-do-prompt>/
+  prompt.md
+  README.md
+  promptfooconfig.yaml   # quando a saída for verificável sem julgamento humano
+```
+
+Regras:
+
+- Os `vars` do teste vêm dos `inputs` do frontmatter — as duas listas têm de
+  bater. Valor que não muda entre casos vai em `defaultTest.vars`.
+- Todo config declara os dois limites operacionais: `latency` e `cost`. Latência
+  e custo são parte da qualidade, não detalhe de infra.
+- O assert mede **substância, não estilo**. Se a saída atende ao padrão de outra
+  forma válida, o assert está errado — conserte o teste, não o prompt.
+- Quando o prompt produz saída em seções, escope o assert à seção certa. Um
+  `not-contains` sobre a saída inteira reprova prompt correto que cita a própria
+  regra no bloco de autoverificação.
+- Prompt de **saída aberta** (causa-raiz, decisão, migração) não entra aqui: não
+  há resposta única verificável por regex. Esses ficam para a camada de
+  julgamento.
+
 ## Git
 
 - Semantic commit, mensagem de uma linha.
