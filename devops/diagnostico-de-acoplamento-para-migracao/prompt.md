@@ -5,7 +5,7 @@ versao: 1.0.0
 tags: [migracao, arquitetura, pipeline-de-dados, cadeia-de-prompts, diagnostico]
 inputs:
   - nome: nome_sistema
-    descricao: Nome do sistema a migrar (ex.: Forge).
+    descricao: Nome do sistema a migrar (ex. Forge).
   - nome: snapshot_estado_atual
     descricao: Estado atual do sistema — ingestão, transformação, destino e pontos frágeis conhecidos.
   - nome: dependentes

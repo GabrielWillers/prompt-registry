@@ -5,9 +5,9 @@ versao: 1.0.0
 tags: [sre, incidentes, causa-raiz, observabilidade, diagnostico]
 inputs:
   - nome: sistema
-    descricao: Sistema sob análise (ex.: Cerebro, Forge, Relay, Sentinel).
+    descricao: Sistema sob análise (ex. Cerebro, Forge, Relay, Sentinel).
   - nome: janela
-    descricao: Janela temporal do incidente, com fuso (ex.: 08:00-10:00 UTC 2026-05-13).
+    descricao: Janela temporal do incidente, com fuso (ex. 08:00-10:00 UTC 2026-05-13).
   - nome: sintoma_relatado
     descricao: O que o plantão observou antes de escalar, em uma frase.
   - nome: config

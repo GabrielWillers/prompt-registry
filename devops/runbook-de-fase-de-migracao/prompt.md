@@ -5,7 +5,7 @@ versao: 1.0.0
 tags: [migracao, runbook, sre, cadeia-de-prompts, rollback]
 inputs:
   - nome: nome_sistema
-    descricao: Nome do sistema a migrar (ex.: Forge).
+    descricao: Nome do sistema a migrar (ex. Forge).
   - nome: plano_faseado
     descricao: Saída integral do elo 2 (plano faseado), colada sem edição.
   - nome: diagnostico

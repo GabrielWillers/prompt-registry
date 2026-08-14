@@ -5,7 +5,7 @@ versao: 1.0.0
 tags: [migracao, arquitetura, planejamento, cadeia-de-prompts, reversibilidade]
 inputs:
   - nome: nome_sistema
-    descricao: Nome do sistema a migrar (ex.: Forge).
+    descricao: Nome do sistema a migrar (ex. Forge).
   - nome: diagnostico
     descricao: Saída integral do elo 1 (diagnóstico de acoplamento), colada sem edição.
   - nome: objetivo_migracao
