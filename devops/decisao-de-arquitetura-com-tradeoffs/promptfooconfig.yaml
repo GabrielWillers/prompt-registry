@@ -1,0 +1,160 @@
+# yaml-language-server: $schema=https://promptfoo.dev/config-schema.json
+description: decisao-de-arquitetura-com-tradeoffs — contrato estrutural + gate de qualidade
+
+prompts:
+  - file://prompt.md
+
+# Provider de REFERÊNCIA — é contra este modelo que o gate decide.
+# Testar todo modelo no caminho crítico transforma o gate numa matriz de
+# compatibilidade, que é outra pergunta: "o prompt regrediu?" e "este modelo
+# aguenta o prompt?" têm consequências diferentes. O segundo modelo roda no job
+# informativo `matriz-de-modelos` do workflow, sem poder derrubar o build.
+providers:
+  - id: google:gemini-3.1-flash-lite
+    config:
+      temperature: 0 # gate reprodutível: sem isto a nota oscila entre rodadas
+      inputCost: 0.0000001 # US$ 0,10 / 1M tokens
+      outputCost: 0.0000004 # US$ 0,40 / 1M tokens
+
+defaultTest:
+  options:
+    provider:
+      id: openai:gpt-4o
+      config: { temperature: 0 }
+    rubricPrompt:
+      - role: system
+        content: |
+          Você é um arquiteto de sistemas distribuídos avaliando uma recomendação
+          de arquitetura. Sua função é PONTUAR, não reescrever.
+
+          ## O cenário (verdade de referência)
+          Relay, barramento de eventos. Throughput sustentado 180k msgs/s; pico
+          observado de 320k msgs/s por 25min; retenção 4h. Consumidores: Forge
+          (ingestão, tolera até 15min de atraso) e Sentinel (alerting, SLA de
+          60s). Orçamento do trimestre já 8% acima. Perda de telemetry é
+          inaceitável.
+
+          O que uma boa recomendação precisa enxergar:
+          - O GARGALO REAL é a assimetria 60s (Sentinel) × 15min (Forge) numa
+            fila compartilhada: o volume do Forge starva o caminho de alerta.
+            Os 15min de folga do Forge são a alavanca da solução.
+          - Restrições DURAS: não perder mensagem; alerting ≤ 60s. Restrição
+            BRANDA: orçamento (penaliza, não elimina) e o atraso do Forge.
+          - Dead-letter queue NÃO resolve backpressure: DLQ existe para mensagem
+            envenenada, não para excesso de volume. Não reduz a latência do
+            stream vivo.
+          - Auto-scaling de consumidores tem lag de spin-up e fura o orçamento;
+            não é defesa confiável para uma rajada de 25min.
+
+          ## Critérios (0 = não atende, 1 = parcial, 2 = atende)
+          1. gargalo_correto — identifica a assimetria de SLA entre os dois
+             consumidores como o que aperta a decisão.
+             0 = não identifica gargalo ou aponta outro (volume bruto, custo);
+             1 = cita os dois SLAs mas não os trata como a alavanca da solução;
+             2 = nomeia a assimetria 60s × 15min como o gargalo e a usa.
+          2. restricoes_classificadas — separa duras de brandas e usa a distinção.
+             0 = não classifica, ou trata orçamento como eliminatório;
+             1 = classifica mas a classificação não muda a análise;
+             2 = classifica e a restrição dura ELIMINA candidatos enquanto a
+                 branda apenas os penaliza.
+          3. compara_alternativas — avalia no mínimo três opções, cada uma contra
+             as restrições, e diz o que cada uma NÃO resolve.
+             0 = recomenda sem comparar, ou compara menos de três;
+             1 = compara três ou mais, mas sem dizer o que cada uma não resolve;
+             2 = compara três ou mais com prós, contras e limite de cada uma.
+                 Reconhecer que DLQ não ataca backpressure é sinal forte de 2.
+          4. sacrificio_explicito — declara o que a recomendação sacrifica e o
+             que faria mudá-la.
+             0 = apresenta a recomendação como sem custo;
+             1 = cita um custo genérico, sem dizer o que é trocado por quê;
+             2 = nomeia o que é sacrificado (tipicamente latência de ingestão do
+                 Forge dentro dos 15min) e dá um gatilho de revisão.
+
+          ## Sua tarefa nesta chamada
+          {{rubric}}
+
+          ## Formato de saída (JSON estrito, nada além dele)
+          {
+            "reason": "gargalo_correto=<0-2>; restricoes_classificadas=<0-2>; compara_alternativas=<0-2>; sacrificio_explicito=<0-2>; total=<0-8>. <justificativa curta>",
+            "score": <número>,
+            "pass": <true|false>
+          }
+      - role: user
+        content: |
+          Recomendação de arquitetura a avaliar:
+
+          {{ output }}
+
+  assert:
+    # ---------- TIER 1: contrato estrutural (determinístico) ----------
+    - type: javascript
+      value: |
+        const t = String(output);
+        const secoes = [/problema/i, /restri[çc][õo]es/i, /(tabela|compara)/i,
+                        /recomenda/i, /premissa/i, /gatilho de revis[ãa]o/i];
+        const faltando = secoes.filter((r) => !r.test(t));
+        if (faltando.length) {
+          return { pass: false, score: 0, reason: `${faltando.length} seção(ões) do formato ausentes` };
+        }
+        return true;
+    # a comparação tem de ser tabela markdown com pelo menos 3 opções
+    - type: javascript
+      value: |
+        const linhas = String(output).split('\n').filter((l) => /^\s*\|.*\|/.test(l));
+        const dados = linhas.filter((l) => !/^\s*\|[\s|:-]+\|\s*$/.test(l));
+        if (dados.length < 4) {
+          return { pass: false, score: 0, reason: `tabela comparativa com ${Math.max(dados.length-1,0)} opção(ões); mínimo 3` };
+        }
+        return true;
+    - type: javascript
+      value: |
+        if (!/dura/i.test(String(output)) || !/branda/i.test(String(output))) {
+          return { pass: false, score: 0, reason: 'não classificou restrições em duras e brandas' };
+        }
+        return true;
+
+    # ---------- TIER 2: gate de qualidade (LLM-as-judge) ----------
+    - type: llm-rubric
+      threshold: 0.75 # 6/8
+      value: |
+        Pontue os quatro critérios, some o total (0 a 8) e devolva:
+        - score = total / 8, SEMPRE, sem nenhuma outra condição;
+        - pass = (total >= 6).
+        Não aplique nenhuma regra sobre critérios zerados nesta chamada.
+    - type: llm-rubric
+      threshold: 1
+      value: |
+        Pontue os quatro critérios e responda APENAS: algum recebeu nota 0?
+        - Se SIM -> score = 0, pass = false.
+        - Se NÃO -> score = 1, pass = true.
+        No reason, liste as quatro notas e diga qual(is) foi(ram) zerado(s).
+
+    # ---------- rede de segurança operacional ----------
+    # Latência e custo NÃO são o gate de regressão — são telemetria com teto
+    # grosseiro. Um prompt não regride porque a chamada levou 7s em vez de 4s.
+    - type: cost
+      threshold: 0.05 # USD
+    - type: latency
+      threshold: 60000 # ms
+
+tests:
+  - description: Backpressure do Relay — cenário do CP04
+    vars:
+      sistema: Relay (barramento de eventos)
+      estado_atual: |
+        - throughput sustentado: 180k msgs/s
+        - pico observado no incidente da semana passada: 320k msgs/s por 25min
+        - retenção atual: 4h
+        - consumidores: Forge (ingestão), Sentinel (alerting em tempo real)
+      restricoes: |
+        - alerting do Sentinel não pode atrasar mais que 60s (SLA com cliente)
+        - ingestão do Forge pode atrasar até 15min sem violar SLA
+        - orçamento de infra do trimestre já está 8% acima do previsto
+        - o barramento antigo perdia mensagens sob pico, e perda de telemetry é
+          inaceitável para um produto de observabilidade
+      opcoes_candidatas: |
+        - dar prioridade ao Sentinel na frente do Forge
+        - guardar o não processado numa dead-letter queue para reprocessar depois
+        - dividir o Relay por cliente, para isolar cliente barulhento
+        - aumentar automaticamente o número de consumidores quando a carga sobe
+      contexto_adicional: ''

@@ -4,18 +4,15 @@ description: causa-raiz — gate de qualidade por LLM-as-judge (rubrica 0–8, c
 prompts:
   - file://prompt.md
 
-# Modelos sob teste. O juiz é OUTRO modelo (ver defaultTest.options.provider):
-# modelo que se autoavalia infla a própria nota.
-# Temperatura 0 nos GERADORES também, não só no juiz: com o default, o
-# gpt-4o-mini oscilou entre 4/8 e 6/8 no mesmo pacote de artefatos — ou seja,
-# passava ou reprovava conforme a rodada. Gate intermitente não serve de gate.
+# Provider de REFERÊNCIA — é contra este modelo que o gate decide.
+# Testar todo modelo no caminho crítico transforma o gate numa matriz de
+# compatibilidade, que é outra pergunta: "o prompt regrediu?" e "este modelo
+# aguenta o prompt?" têm consequências diferentes. O segundo modelo roda no job
+# informativo `matriz-de-modelos` do workflow, sem poder derrubar o build.
 providers:
-  - id: openai:gpt-4o-mini
-    config:
-      temperature: 0
   - id: google:gemini-3.1-flash-lite
     config:
-      temperature: 0
+      temperature: 0 # gate reprodutível: sem isto a nota oscila entre rodadas
       inputCost: 0.0000001 # US$ 0,10 / 1M tokens
       outputCost: 0.0000004 # US$ 0,40 / 1M tokens
 

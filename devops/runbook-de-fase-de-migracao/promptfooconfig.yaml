@@ -1,0 +1,196 @@
+# yaml-language-server: $schema=https://promptfoo.dev/config-schema.json
+description: runbook-de-fase-de-migracao — contrato executável (elo 3) + gate de qualidade
+
+prompts:
+  - file://prompt.md
+
+# Provider de REFERÊNCIA — é contra este modelo que o gate decide.
+# Testar todo modelo no caminho crítico transforma o gate numa matriz de
+# compatibilidade, que é outra pergunta: "o prompt regrediu?" e "este modelo
+# aguenta o prompt?" têm consequências diferentes. O segundo modelo roda no job
+# informativo `matriz-de-modelos` do workflow, sem poder derrubar o build.
+providers:
+  - id: google:gemini-3.1-flash-lite
+    config:
+      temperature: 0 # gate reprodutível: sem isto a nota oscila entre rodadas
+      inputCost: 0.0000001 # US$ 0,10 / 1M tokens
+      outputCost: 0.0000004 # US$ 0,40 / 1M tokens
+
+defaultTest:
+  options:
+    provider:
+      id: openai:gpt-4o
+      config: { temperature: 0 }
+    rubricPrompt:
+      - role: system
+        content: |
+          Você é um SRE sênior avaliando um RUNBOOK de migração que será executado
+          às 3h da manhã. Sua função é PONTUAR, não reescrever.
+
+          ## O cenário (verdade de referência)
+          Fase a detalhar: parallel-run do consumidor event-driven do Forge,
+          escrevendo em tabelas shadow, comparado contra o batch. Invariantes do
+          diagnóstico: I1 partição completa, I2 partição fechada imutável, I3 uma
+          contagem por evento, I6 evento na partição da hora do evento.
+
+          O que um bom runbook precisa ter:
+          - Critério de abort com NÚMERO ou condição verificável, nunca "se der
+            problema". É a diferença entre procedimento e intenção.
+          - Portões de validação amarrados a invariantes por identificador.
+          - Passos verificáveis: quem executa consegue dizer se deu certo sem
+            interpretar.
+          - Detalhar UMA fase. Detalhar todas de forma rasa é o erro clássico.
+          - Sinal de excelência: validar o caminho de volta antes de precisar
+            dele (ensaio de rollback).
+
+          ## Critérios (0 = não atende, 1 = parcial, 2 = atende)
+          1. abort_objetivo — o gatilho de rollback é mensurável.
+             0 = "se der problema", "se algo falhar"; 1 = número presente mas sem
+             dizer sobre qual métrica ou em que janela; 2 = métrica, limiar e
+             janela definidos.
+          2. portoes_por_invariante — cada portão diz qual invariante confirma e
+             como medir contra o baseline.
+             0 = sem portões ou sem invariantes; 1 = portões genéricos;
+             2 = portões citando invariante por identificador e a verificação.
+          3. passos_verificaveis — cada passo tem ação concreta e resultado
+             esperado que se possa checar.
+             0 = passos narrativos; 1 = alguns com resultado esperado;
+             2 = todos, em linguagem imperativa.
+          4. escopo_uma_fase — detalha exclusivamente a fase pedida.
+             0 = detalha várias fases; 1 = foca numa mas se espalha;
+             2 = só a fase alvo, com Definition of Done dela.
+
+          ## Sua tarefa nesta chamada
+          {{rubric}}
+
+          ## Formato de saída (JSON estrito, nada além dele)
+          {
+            "reason": "abort_objetivo=<0-2>; portoes_por_invariante=<0-2>; passos_verificaveis=<0-2>; escopo_uma_fase=<0-2>; total=<0-8>. <justificativa curta>",
+            "score": <número>,
+            "pass": <true|false>
+          }
+      - role: user
+        content: |
+          Runbook a avaliar:
+
+          {{ output }}
+
+  assert:
+    # ---------- TIER 1: contrato executável ----------
+    - type: contains
+      value: '## Pré-checagens'
+    - type: contains
+      value: '## Execução'
+    - type: contains
+      value: '## Portões de validação'
+    - type: contains
+      value: '## Rollback'
+    - type: contains
+      value: '## Definition of Done'
+    # execução numerada
+    - type: javascript
+      value: |
+        const t = String(output);
+        const i = t.indexOf('## Execução');
+        const bloco = i < 0 ? '' : t.slice(i, t.indexOf('## Portões') > i ? t.indexOf('## Portões') : undefined);
+        const passos = (bloco.match(/^\s*\d+\./gm) || []).length;
+        if (passos < 3) {
+          return { pass: false, score: 0, reason: `Execução com ${passos} passo(s) numerado(s); esperado 3 ou mais` };
+        }
+        return true;
+    # O assert que mais importa: critério de abort mensurável, não "se der problema"
+    - type: javascript
+      value: |
+        const t = String(output);
+        const i = t.search(/##\s*Rollback/i);
+        const bloco = i < 0 ? '' : t.slice(i, i + 1800);
+        if (!/abort|abortar/i.test(bloco)) {
+          return { pass: false, score: 0, reason: 'Rollback sem critério de abort declarado' };
+        }
+        const temNumero = /\d+\s*(%|min|s\b|segundos?|minutos?|horas?)/i.test(bloco) || /\d+[.,]\d+\s*%/.test(bloco);
+        if (!temNumero) {
+          return { pass: false, score: 0, reason: 'critério de abort sem número ou condição mensurável' };
+        }
+        const vago = /se der problema|se algo (der errado|falhar)|caso haja problema/i.test(bloco);
+        if (vago) {
+          return { pass: false, score: 0, reason: 'critério de abort vago ("se der problema")' };
+        }
+        return true;
+    # portões citam invariante por identificador
+    - type: javascript
+      value: |
+        const t = String(output);
+        const i = t.indexOf('## Portões de validação');
+        const bloco = i < 0 ? '' : t.slice(i, i + 2500);
+        const ids = [...new Set(bloco.match(/\bI\d+\b/g) || [])];
+        if (ids.length < 1) {
+          return { pass: false, score: 0, reason: 'portões de validação não referenciam invariante por identificador' };
+        }
+        return true;
+    # detalha UMA fase: não pode listar várias
+    - type: javascript
+      value: |
+        const fases = [...new Set((String(output).match(/Fase\s+\d+/gi) || []).map((s) => s.toLowerCase().replace(/\s+/g, ' ')))];
+        if (fases.length > 2) {
+          return { pass: false, score: 0, reason: `menciona ${fases.length} fases (${fases.join(', ')}); o elo 3 detalha exatamente uma` };
+        }
+        return true;
+
+    # ---------- TIER 2: gate de qualidade ----------
+    - type: llm-rubric
+      threshold: 0.75
+      value: |
+        Pontue os quatro critérios, some o total (0 a 8) e devolva:
+        - score = total / 8, SEMPRE, sem nenhuma outra condição;
+        - pass = (total >= 6).
+        Não aplique nenhuma regra sobre critérios zerados nesta chamada.
+    - type: llm-rubric
+      threshold: 1
+      value: |
+        Pontue os quatro critérios e responda APENAS: algum recebeu nota 0?
+        - Se SIM -> score = 0, pass = false.
+        - Se NÃO -> score = 1, pass = true.
+
+    # Latência e custo NÃO são o gate de regressão — são telemetria com teto
+    # grosseiro. Um prompt não regride porque a chamada levou 7s em vez de 4s.
+    - type: cost
+      threshold: 0.05 # USD
+    - type: latency
+      threshold: 60000 # ms
+
+tests:
+  - description: Migração do Forge — runbook da fase de parallel-run
+    vars:
+      nome_sistema: Forge
+      fase_alvo: 'Fase 4 — Parallel-run com comparação automatizada'
+      contexto_tecnico: |
+        14 etapas em Spark no pipeline atual; consumo do Relay; warehouse
+        particionado por hora; deploy por GitOps; observabilidade no Sentinel.
+      diagnostico: |
+        ## Invariantes
+        - **I1** — Uma partição horária visível contém todos os eventos daquela hora.
+        - **I2** — Partição fechada é imutável; o billing lê de madrugada.
+        - **I3** — Exatamente uma contagem por evento no warehouse.
+        - **I6** — O evento cai na partição da hora do evento, não da hora do processamento.
+
+        ## Falhas silenciosas por dependente
+        - **Sentinel** — lê partição parcial e mostra número menor, sem erro.
+        - **Cerebro** — indexa evento duplicado ou deixa de indexar.
+        - **Billing** — soma parcial ou dupla; a fatura sai errada sem erro.
+      plano_faseado: |
+        ### Fase 3 — Consumidor streaming escrevendo em destino isolado
+        - Objetivo: implantar o consumidor event-driven gravando em tabelas `*_shadow`.
+        - Invariantes protegidas: I1, I2, I3
+        - Critério de saída: 24h de processamento sem intervenção, lag p95 < 5min.
+
+        ### Fase 4 — Parallel-run com comparação automatizada
+        - Objetivo: rodar os dois caminhos e comparar saída contra saída, partição a partição.
+        - Invariantes protegidas: I1, I3, I6
+        - Critério de entrada: fase 3 concluída.
+        - Critério de saída: divergência abaixo de 0,1% em contagem e em soma de
+          métrica de billing, em 168 partições horárias consecutivas.
+        - Rollback: desligar comparação e consumidor; nenhum dependente foi tocado.
+        - Risco residual: divergência dentro do limiar mas sistemática pode passar.
+
+        ### Fase 5 — Cutover por dependente
+        - Objetivo: apontar um dependente por vez para o caminho novo.

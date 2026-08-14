@@ -1,0 +1,178 @@
+# yaml-language-server: $schema=https://promptfoo.dev/config-schema.json
+description: diagnostico-de-acoplamento — contrato de handoff (elo 1) + gate de qualidade
+
+prompts:
+  - file://prompt.md
+
+# Provider de REFERÊNCIA — é contra este modelo que o gate decide.
+# Testar todo modelo no caminho crítico transforma o gate numa matriz de
+# compatibilidade, que é outra pergunta: "o prompt regrediu?" e "este modelo
+# aguenta o prompt?" têm consequências diferentes. O segundo modelo roda no job
+# informativo `matriz-de-modelos` do workflow, sem poder derrubar o build.
+providers:
+  - id: google:gemini-3.1-flash-lite
+    config:
+      temperature: 0 # gate reprodutível: sem isto a nota oscila entre rodadas
+      inputCost: 0.0000001 # US$ 0,10 / 1M tokens
+      outputCost: 0.0000004 # US$ 0,40 / 1M tokens
+
+defaultTest:
+  options:
+    provider:
+      id: openai:gpt-4o
+      config: { temperature: 0 }
+    rubricPrompt:
+      - role: system
+        content: |
+          Você é um arquiteto de plataformas de dados avaliando o DIAGNÓSTICO que
+          antecede uma migração. Sua função é PONTUAR, não reescrever.
+
+          ## O cenário (verdade de referência)
+          Forge, pipeline de dados. Hoje: job em cron a cada 60min, 14 etapas em
+          Spark (~40min), grava em tabelas do warehouse particionadas por hora;
+          se um lote falha, o próximo acumula o dobro. Dependentes: Sentinel (lê
+          tabelas agregadas), Cerebro (indexa eventos transformados) e billing
+          (roda de madrugada). Alvo: consumo contínuo do Relay em blocos pequenos.
+
+          O que um bom diagnóstico precisa enxergar:
+          - O acoplamento decisivo é a CADÊNCIA, não o formato: os três
+            dependentes leem um artefato que só existe porque um lote terminou.
+            O fim do job é o sinal de "pode ler", e esse sinal some no contínuo.
+          - Invariantes que importam: partição horária visível tem de estar
+            COMPLETA; partição fechada é IMUTÁVEL (o billing lê de madrugada);
+            exatamente uma contagem por evento; o evento cai na partição da HORA
+            DO EVENTO, não da hora de processamento (dado atrasado).
+          - Falhas silenciosas: o Sentinel lê partição parcial e mostra número
+            menor sem erro (pior caso: alerta por limiar não dispara); o billing
+            soma parcial ou duplicado e a fatura sai errada.
+          - Riscos reais da transição: semântica de agregação (lote fechado vs
+            janela incremental), dado atrasado sem watermark, duplicata por
+            reprocessamento at-least-once, estado das 14 etapas, custo contínuo.
+
+          ## Critérios (0 = não atende, 1 = parcial, 2 = atende)
+          1. acoplamento_por_cadencia — identifica que o acoplamento crítico é
+             temporal (o fim do lote como sinal de leitura), não só o formato.
+             0 = lista só formatos/tabelas; 1 = menciona cadência sem tratá-la
+             como o ponto crítico; 2 = nomeia o sinal implícito que desaparece.
+          2. invariantes_uteis — as invariantes são propriedades OBSERVÁVEIS
+             pelos dependentes, não objetivos genéricos.
+             0 = invariantes vagas ("não pode ter downtime"); 1 = mistura
+             observáveis com objetivos; 2 = todas verificáveis por um dependente,
+             cobrindo completude, imutabilidade e contagem única.
+          3. falha_silenciosa_real — descreve, por dependente, como ele quebraria
+             SEM erro explícito.
+             0 = descreve erros visíveis (exceção, timeout); 1 = silenciosa para
+             parte dos dependentes; 2 = silenciosa para todos, com o mecanismo.
+          4. nao_propoe_solucao — respeita a instrução de apenas diagnosticar.
+             0 = apresenta plano de migração ou fases; 1 = contrabandeia
+             recomendação dentro da justificativa dos riscos; 2 = só diagnostica.
+
+          ## Sua tarefa nesta chamada
+          {{rubric}}
+
+          ## Formato de saída (JSON estrito, nada além dele)
+          {
+            "reason": "acoplamento_por_cadencia=<0-2>; invariantes_uteis=<0-2>; falha_silenciosa_real=<0-2>; nao_propoe_solucao=<0-2>; total=<0-8>. <justificativa curta>",
+            "score": <número>,
+            "pass": <true|false>
+          }
+      - role: user
+        content: |
+          Diagnóstico a avaliar:
+
+          {{ output }}
+
+  assert:
+    # ---------- TIER 1: contrato de handoff (determinístico) ----------
+    # Estes asserts existem porque o elo 2 consome esta saída sem edição.
+    # Quebrar a forma quebra a cadeia inteira, silenciosamente.
+    - type: contains
+      value: '## Acoplamentos'
+    - type: contains
+      value: '## Invariantes'
+    - type: contains
+      value: '## Riscos priorizados'
+    - type: contains
+      value: '## Falhas silenciosas por dependente'
+    # invariantes numeradas — o elo 2 e o elo 3 as citam por identificador
+    - type: javascript
+      value: |
+        const ids = String(output).match(/\bI\d+\b/g) || [];
+        const unicos = [...new Set(ids)];
+        if (unicos.length < 3) {
+          return { pass: false, score: 0, reason: `só ${unicos.length} invariante(s) numerada(s); elos 2 e 3 citam por identificador` };
+        }
+        return true;
+    # riscos priorizados em tabela com impacto e probabilidade
+    - type: javascript
+      value: |
+        const t = String(output);
+        const i = t.indexOf('## Riscos priorizados');
+        const bloco = i < 0 ? '' : t.slice(i, i + 2500);
+        if (!/\|/.test(bloco) || !/impacto/i.test(bloco) || !/probabilidade/i.test(bloco)) {
+          return { pass: false, score: 0, reason: 'Riscos priorizados não é tabela com impacto e probabilidade' };
+        }
+        return true;
+    # cada dependente declarado aparece em falhas silenciosas
+    - type: javascript
+      value: |
+        const t = String(output);
+        const i = t.indexOf('## Falhas silenciosas');
+        const bloco = i < 0 ? '' : t.slice(i);
+        const ausentes = ['Sentinel', 'Cerebro', 'billing'].filter(
+          (d) => !new RegExp(d, 'i').test(bloco),
+        );
+        if (ausentes.length) {
+          return { pass: false, score: 0, reason: `dependente(s) sem falha silenciosa: ${ausentes.join(', ')}` };
+        }
+        return true;
+    # o elo 1 NÃO pode pular para a solução
+    - type: javascript
+      value: |
+        if (/##\s*(plano|fases?|migra[çc][ãa]o em fases|roadmap)/i.test(String(output))) {
+          return { pass: false, score: 0, reason: 'elo 1 propôs plano de migração; ele deve apenas diagnosticar' };
+        }
+        return true;
+
+    # ---------- TIER 2: gate de qualidade ----------
+    - type: llm-rubric
+      threshold: 0.75
+      value: |
+        Pontue os quatro critérios, some o total (0 a 8) e devolva:
+        - score = total / 8, SEMPRE, sem nenhuma outra condição;
+        - pass = (total >= 6).
+        Não aplique nenhuma regra sobre critérios zerados nesta chamada.
+    - type: llm-rubric
+      threshold: 1
+      value: |
+        Pontue os quatro critérios e responda APENAS: algum recebeu nota 0?
+        - Se SIM -> score = 0, pass = false.
+        - Se NÃO -> score = 1, pass = true.
+
+    # Latência e custo NÃO são o gate de regressão — são telemetria com teto
+    # grosseiro. Um prompt não regride porque a chamada levou 7s em vez de 4s.
+    - type: cost
+      threshold: 0.05 # USD
+    - type: latency
+      threshold: 60000 # ms
+
+tests:
+  - description: Migração do Forge — diagnóstico do estado atual
+    vars:
+      nome_sistema: Forge
+      snapshot_estado_atual: |
+        - ingestão: um job em cron acorda a cada 60min (o "forge-batch-ingest")
+        - transformação: 14 etapas de processamento encadeadas (em Spark), ~40min no total
+        - destino: grava em tabelas no data warehouse, particionadas por hora
+        - ponto frágil: se um lote falha, o próximo acumula o dobro de volume
+      dependentes: |
+        - Sentinel: lê as tabelas agregadas
+        - Cerebro: indexa os eventos transformados
+        - Relatórios de billing: rodam de madrugada
+      objetivo_migracao: |
+        Consumir do Relay continuamente, processando em pequenos blocos no lugar
+        do lote de 1h.
+      restricoes: |
+        - manter quem depende do Forge funcionando durante a transição
+        - nada de virada única (big-bang)
+        - a migração vai em passos e pode voltar atrás

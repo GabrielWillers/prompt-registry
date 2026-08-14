@@ -1,0 +1,224 @@
+# yaml-language-server: $schema=https://promptfoo.dev/config-schema.json
+description: plano-faseado-de-migracao — contrato de handoff (elo 2) + gate de qualidade
+
+prompts:
+  - file://prompt.md
+
+# Provider de REFERÊNCIA — é contra este modelo que o gate decide.
+# Testar todo modelo no caminho crítico transforma o gate numa matriz de
+# compatibilidade, que é outra pergunta: "o prompt regrediu?" e "este modelo
+# aguenta o prompt?" têm consequências diferentes. O segundo modelo roda no job
+# informativo `matriz-de-modelos` do workflow, sem poder derrubar o build.
+providers:
+  - id: google:gemini-3.1-flash-lite
+    config:
+      temperature: 0 # gate reprodutível: sem isto a nota oscila entre rodadas
+      inputCost: 0.0000001 # US$ 0,10 / 1M tokens
+      outputCost: 0.0000004 # US$ 0,40 / 1M tokens
+
+defaultTest:
+  options:
+    provider:
+      id: openai:gpt-4o
+      config: { temperature: 0 }
+    rubricPrompt:
+      - role: system
+        content: |
+          Você é um arquiteto de migrações avaliando um PLANO FASEADO. Sua função
+          é PONTUAR, não reescrever.
+
+          ## O cenário (verdade de referência)
+          Forge migra de lote horário para consumo contínuo do Relay. Dependentes:
+          Sentinel (tabelas agregadas), Cerebro (indexa eventos), billing (roda de
+          madrugada). Restrições: manter dependentes funcionando, nada de virada
+          única, cada passo reversível.
+
+          O que um bom plano precisa ter:
+          - Ordem ADITIVA antes de SUBTRATIVA: fases que só acrescentam o caminho
+            novo vêm antes de qualquer corte do antigo. É o que garante retorno.
+          - Parallel-run com COMPARAÇÃO de saídas antes de qualquer cutover, com
+            destino isolado (tabelas shadow) — sem isolamento, os dois caminhos
+            escrevem no mesmo lugar e o billing conta duas vezes.
+          - O batch legado desligado só na ÚLTIMA fase, e reativável.
+          - Critérios de saída com NÚMERO, não com adjetivo.
+          - Cutover ordenado por reversibilidade da falha é sinal de excelência:
+            Cerebro (reindexar conserta) antes de Sentinel (detectável) antes de
+            billing (caro e silencioso).
+
+          ## Critérios (0 = não atende, 1 = parcial, 2 = atende)
+          1. ordem_de_risco — aditivas antes de subtrativas, legado por último.
+             0 = corta o caminho antigo antes de o novo estar provado;
+             1 = ordem plausível mas sem lógica declarada; 2 = ordem explícita
+             por risco, com o legado desligado só no fim e reativável.
+          2. parallel_run_isolado — existe fase de execução paralela com
+             comparação e destino isolado.
+             0 = sem parallel-run; 1 = parallel-run sem comparação de saídas ou
+             sem isolar o destino; 2 = ambos.
+          3. criterios_objetivos — critério de saída e gatilho de rollback são
+             mensuráveis.
+             0 = "quando estiver estável"; 1 = alguns numéricos, outros vagos;
+             2 = todas as fases com número ou condição verificável.
+          4. invariantes_citadas — cada fase declara qual invariante do
+             diagnóstico protege, por identificador.
+             0 = não cita; 1 = cita em parte das fases ou sem identificador;
+             2 = todas as fases citam ao menos uma invariante por identificador.
+
+          ## Sua tarefa nesta chamada
+          {{rubric}}
+
+          ## Formato de saída (JSON estrito, nada além dele)
+          {
+            "reason": "ordem_de_risco=<0-2>; parallel_run_isolado=<0-2>; criterios_objetivos=<0-2>; invariantes_citadas=<0-2>; total=<0-8>. <justificativa curta>",
+            "score": <número>,
+            "pass": <true|false>
+          }
+      - role: user
+        content: |
+          Plano faseado a avaliar:
+
+          {{ output }}
+
+  assert:
+    # ---------- TIER 1: contrato de handoff ----------
+    - type: contains
+      value: '## Sequência das fases'
+    - type: contains
+      value: mermaid
+    # cita invariantes do elo 1 por identificador
+    - type: javascript
+      value: |
+        const ids = [...new Set(String(output).match(/\bI\d+\b/g) || [])];
+        if (ids.length < 2) {
+          return { pass: false, score: 0, reason: `cita ${ids.length} invariante(s) por identificador; o contrato exige referência ao elo 1` };
+        }
+        return true;
+    # tem parallel-run / shadow ANTES de qualquer corte do batch
+    - type: javascript
+      value: |
+        const t = String(output).toLowerCase();
+        const iShadow = Math.min(...['parallel-run','parallel run','shadow']
+          .map((k) => { const i = t.indexOf(k); return i < 0 ? Infinity : i; }));
+        const iCorte = Math.min(...['desligar o batch','desligar batch','desativar o batch','cutover','corte do batch']
+          .map((k) => { const i = t.indexOf(k); return i < 0 ? Infinity : i; }));
+        if (iShadow === Infinity) {
+          return { pass: false, score: 0, reason: 'nenhuma fase de parallel-run/shadow' };
+        }
+        if (iCorte !== Infinity && iShadow > iCorte) {
+          return { pass: false, score: 0, reason: 'corte do caminho antigo aparece ANTES do parallel-run' };
+        }
+        return true;
+    # o legado tem de continuar reativável
+    - type: javascript
+      value: |
+        if (!/reativ|reabilit|voltar a ligar|religar/i.test(String(output))) {
+          return { pass: false, score: 0, reason: 'não declara o batch legado como reativável' };
+        }
+        return true;
+    # Critério de saída mensurável em cada fase.
+    # Olha a LINHA do critério (e a seguinte, para o caso de quebra), em vez de
+    # uma janela de N caracteres — a janela fixa pegava texto da fase seguinte e
+    # contava fase errada como reprovada.
+    - type: javascript
+      value: |
+        const linhas = String(output).split('\n');
+        const inicios = [];
+        // Âncora no início da linha e exige separador depois do número.
+        // Sem isso, "Critério de entrada: Fase 1 concluída" e os nós do mermaid
+        // ("A[Fase 1: ...]") eram lidos como início de fase, fragmentando os
+        // blocos e acusando fase correta de estar sem critério de saída.
+        linhas.forEach((l, i) => {
+          if (/^\s{0,3}(#{2,4}\s+)?\*{0,2}\s*Fase\s+\d+\s*[:.\-—)]/i.test(l)) inicios.push(i);
+        });
+        if (inicios.length < 3) {
+          return { pass: false, score: 0, reason: `só ${inicios.length} fase(s) detectada(s); migração incremental precisa de mais` };
+        }
+        const problemas = [];
+        inicios.forEach((ini, k) => {
+          const fim = k + 1 < inicios.length ? inicios[k + 1] : linhas.length;
+          const bloco = linhas.slice(ini, fim);
+          const idx = bloco.findIndex((l) => /crit[ée]rio de sa[íi]da|sinal de sucesso/i.test(l));
+          const nome = (bloco[0] || '').replace(/[#*]/g, '').trim().slice(0, 40);
+          if (idx === -1) {
+            problemas.push(`"${nome}" sem critério de saída`);
+            return;
+          }
+          const alvo = bloco.slice(idx, idx + 2).join(' ');
+          if (!/\d/.test(alvo)) problemas.push(`"${nome}" com critério sem número`);
+        });
+        if (problemas.length) {
+          return { pass: false, score: 0, reason: `${problemas.length} fase(s): ${problemas.join('; ')}` };
+        }
+        return true;
+
+    # ---------- TIER 2: gate de qualidade ----------
+    - type: llm-rubric
+      threshold: 0.75
+      value: |
+        Pontue os quatro critérios, some o total (0 a 8) e devolva:
+        - score = total / 8, SEMPRE, sem nenhuma outra condição;
+        - pass = (total >= 6).
+        Não aplique nenhuma regra sobre critérios zerados nesta chamada.
+    - type: llm-rubric
+      threshold: 1
+      value: |
+        Pontue os quatro critérios e responda APENAS: algum recebeu nota 0?
+        - Se SIM -> score = 0, pass = false.
+        - Se NÃO -> score = 1, pass = true.
+
+    # Latência e custo NÃO são o gate de regressão — são telemetria com teto
+    # grosseiro. Um prompt não regride porque a chamada levou 7s em vez de 4s.
+    - type: cost
+      threshold: 0.05 # USD
+    - type: latency
+      threshold: 60000 # ms
+
+tests:
+  - description: Migração do Forge — decomposição em fases
+    vars:
+      nome_sistema: Forge
+      objetivo_migracao: |
+        Consumir do Relay continuamente, processando em pequenos blocos no lugar
+        do lote de 1h.
+      restricoes: |
+        - manter quem depende do Forge funcionando durante a transição
+        - nada de virada única (big-bang)
+        - a migração vai em passos e pode voltar atrás
+      # Saída do elo 1, colada sem edição — é o contrato de handoff em ação.
+      diagnostico: |
+        ## Acoplamentos
+        | Dependente | O que consome | Cadência | Contrato implícito |
+        |---|---|---|---|
+        | Sentinel | Tabelas agregadas do warehouse | Dado novo a cada hora | Assume que a partição visível está completa |
+        | Cerebro | Eventos transformados | Horária, atrelada ao fim do job | Assume entrega única por evento |
+        | Billing | Tabelas particionadas por hora | Diária, de madrugada | Assume que partição fechada nunca muda |
+
+        O acoplamento decisivo não é o formato — é a cadência. Todos os três leem
+        um artefato que só existe porque um lote terminou. O fim do job é o sinal
+        de "pode ler", e esse sinal desaparece no modelo contínuo.
+
+        ## Invariantes
+        - **I1** — Uma partição horária visível contém todos os eventos daquela hora.
+        - **I2** — Partição fechada é imutável; o billing lê de madrugada.
+        - **I3** — Exatamente uma contagem por evento no warehouse.
+        - **I4** — O schema das tabelas agregadas não muda sem versionamento.
+        - **I5** — Todo evento transformado chega ao Cerebro exatamente uma vez.
+        - **I6** — O evento cai na partição da hora do evento, não da hora do processamento.
+        - **I7** — A latência de disponibilidade para o Sentinel não piora.
+
+        ## Riscos priorizados
+        | Risco | Impacto | Probabilidade | Por quê |
+        |---|---|---|---|
+        | Semântica de agregação muda de lote fechado para janela incremental | Alto | Alta | As 14 etapas assumem lote completo — quebra I1 e I3 |
+        | Dado atrasado cai na partição errada | Alto | Alta | Streaming precisa de watermark, que hoje não existe — quebra I6 |
+        | Partição aberta lida antes de completa | Alto | Alta | Escrita contínua torna a partição legível o tempo todo — quebra I1 |
+        | Dupla contagem durante o parallel-run | Alto | Média | Dois caminhos escrevendo sem isolamento — quebra I3 |
+        | Duplicata por reprocessamento após falha | Alto | Média | Consumo at-least-once — quebra I3 e I5 |
+        | Custo contínuo maior que o batch | Médio | Alta | Hoje o cluster trabalha ~40min por hora |
+
+        ## Falhas silenciosas por dependente
+        - **Sentinel** — lê partição parcial e mostra número menor, sem erro. Pior
+          caso: alerta por limiar não dispara. Falso negativo é invisível.
+        - **Cerebro** — indexa o mesmo evento duas vezes (busca devolve repetido) ou
+          deixa de indexar (a agulha some do palheiro).
+        - **Billing** — soma parcial ou dupla. A query retorna com sucesso e a
+          fatura sai. O erro é descoberto pelo cliente.

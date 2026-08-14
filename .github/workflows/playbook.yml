@@ -1,0 +1,257 @@
+name: playbook
+
+# O gate roda a cada alteração. O escopo muda conforme o gatilho:
+#   PR      -> só os prompts tocados (feedback rápido e barato)
+#   main    -> suíte inteira (a rede que pega efeito colateral entre prompts)
+#   agendado-> suíte inteira (pega deriva de provedor sem ninguém ter mexido)
+on:
+  pull_request:
+    paths:
+      - 'devops/**'
+      - 'tools/**'
+      - '.github/workflows/playbook.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'devops/**'
+      - 'tools/**'
+      - '.github/workflows/playbook.yml'
+  schedule:
+    - cron: '0 6 * * 1' # segunda-feira, 06:00 UTC
+  workflow_dispatch:
+    inputs:
+      escopo:
+        description: 'Escopo da suíte'
+        type: choice
+        options: [alterados, completo]
+        default: completo
+
+concurrency:
+  group: playbook-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # CAMADA 0 — convenções. Custo zero, segundos. Falha aqui aborta tudo antes
+  # de gastar um único token: não faz sentido pagar avaliação de um prompt cujo
+  # frontmatter nem parseia.
+  # ---------------------------------------------------------------------------
+  contrato:
+    name: Convenções do catálogo
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install --quiet pyyaml
+      - name: Validar frontmatter, semver e contrato de inputs
+        run: python tools/validar-convencoes.py
+
+  # ---------------------------------------------------------------------------
+  # Decide QUAIS prompts entram na suíte desta execução.
+  # ---------------------------------------------------------------------------
+  escopo:
+    name: Definir escopo
+    runs-on: ubuntu-latest
+    needs: contrato
+    outputs:
+      prompts: ${{ steps.calcular.outputs.prompts }}
+      vazio: ${{ steps.calcular.outputs.vazio }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0 # git diff precisa do histórico
+
+      - id: calcular
+        shell: bash
+        run: |
+          set -euo pipefail
+          completo() { find devops -name promptfooconfig.yaml -printf '%h\n' | sort; }
+
+          if [ "${{ github.event_name }}" = "pull_request" ] && [ "${{ inputs.escopo || 'alterados' }}" != "completo" ]; then
+            base="${{ github.event.pull_request.base.sha }}"
+            # Mudança em ferramenta ou no próprio workflow afeta todo mundo:
+            # nesse caso o escopo reduzido esconderia regressão.
+            if git diff --name-only "$base" HEAD | grep -qE '^(tools/|\.github/workflows/)'; then
+              echo "Mudança transversal detectada — rodando a suíte completa."
+              dirs=$(completo)
+            else
+              dirs=$(git diff --name-only "$base" HEAD \
+                     | grep -E '^devops/[^/]+/(prompt\.md|promptfooconfig\.yaml)$' \
+                     | xargs -r -n1 dirname | sort -u || true)
+            fi
+          else
+            dirs=$(completo)
+          fi
+
+          if [ -z "${dirs:-}" ]; then
+            echo "vazio=true" >> "$GITHUB_OUTPUT"
+            echo "prompts=[]" >> "$GITHUB_OUTPUT"
+            echo "Nenhum prompt com suíte foi alterado."
+          else
+            echo "vazio=false" >> "$GITHUB_OUTPUT"
+            echo "prompts=$(printf '%s\n' "$dirs" | jq -R . | jq -sc .)" >> "$GITHUB_OUTPUT"
+            echo "Na suíte desta execução:"; printf '  %s\n' $dirs
+          fi
+
+  # ---------------------------------------------------------------------------
+  # CAMADA 1 + 2 — a suíte que decide o build.
+  # Um job por prompt: falha isolada aponta o prompt culpado sem ler log.
+  # ---------------------------------------------------------------------------
+  suite:
+    name: ${{ matrix.prompt }}
+    runs-on: ubuntu-latest
+    needs: escopo
+    if: needs.escopo.outputs.vazio == 'false'
+    strategy:
+      fail-fast: false # queremos o quadro completo, não a primeira falha
+      max-parallel: 2 # respeita o rate limit do provedor
+      matrix:
+        prompt: ${{ fromJSON(needs.escopo.outputs.prompts) }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Cache do promptfoo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.promptfoo/cache
+            .promptfoo-cache
+          key: promptfoo-${{ hashFiles(format('{0}/prompt.md', matrix.prompt)) }}-${{ github.sha }}
+          restore-keys: |
+            promptfoo-${{ hashFiles(format('{0}/prompt.md', matrix.prompt)) }}-
+            promptfoo-
+
+      # Tentativa 1 — comenta o resultado no PR. continue-on-error porque quem
+      # decide o veredito é a tentativa 2, não esta.
+      - id: eval
+        name: Avaliar
+        uses: promptfoo/promptfoo-action@v1
+        continue-on-error: true
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          config: promptfooconfig.yaml
+          working-directory: ${{ matrix.prompt }}
+          use-config-prompts: true
+          promptfoo-version: 0.122.0 # pinado: o gate não pode mudar sozinho
+          cache-path: .promptfoo-cache
+          max-concurrency: 1
+          fail-on-threshold: 100 # qualquer assert reprovado derruba
+          no-share: true
+        env:
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+          PROMPTFOO_DISABLE_TELEMETRY: '1'
+
+      # Tentativa 2 — só roda se a primeira falhou. Existe porque as falhas
+      # transitórias de provedor são reais e medidas neste repositório: 503 do
+      # Gemini e uma chamada de 194s que normalmente leva 13s. Sem retry, o time
+      # aprende a apertar "re-run" sem ler, e o gate perde a autoridade.
+      # Esta tentativa NÃO tem continue-on-error: se falhar, o build cai.
+      - id: retry
+        name: Retentar (falha na primeira tentativa)
+        if: steps.eval.outcome == 'failure'
+        uses: promptfoo/promptfoo-action@v1
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          config: promptfooconfig.yaml
+          working-directory: ${{ matrix.prompt }}
+          use-config-prompts: true
+          promptfoo-version: 0.122.0
+          max-concurrency: 1
+          fail-on-threshold: 100
+          no-share: true
+          no-cache: true # cache guardaria a saída que acabou de falhar
+          force-run: true
+          disable-comment: true # o comentário da tentativa 1 já está no PR
+        env:
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+          PROMPTFOO_DISABLE_TELEMETRY: '1'
+
+      # Passou só na segunda: não derruba o build, mas fica registrado. Duas
+      # ocorrências no mesmo prompt viram investigação, não "roda de novo".
+      - name: Sinalizar instabilidade
+        if: steps.eval.outcome == 'failure' && steps.retry.outcome == 'success'
+        run: |
+          echo "::warning title=Suíte instável::${{ matrix.prompt }} falhou na 1ª tentativa e passou na 2ª. Se repetir, investigue em vez de reexecutar."
+
+      - name: Guardar resultado
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-${{ hashFiles(format('{0}/promptfooconfig.yaml', matrix.prompt)) }}
+          path: |
+            ${{ matrix.prompt }}/output.json
+            ${{ matrix.prompt }}/*.html
+          if-no-files-found: ignore
+          retention-days: 14
+
+  # ---------------------------------------------------------------------------
+  # Compatibilidade de modelo — informativo, NÃO derruba o build.
+  # As suítes rodam no modelo de referência do playbook. Este job responde
+  # "o prompt sobrevive num modelo mais fraco?", que é bom saber e péssimo como
+  # bloqueio: reprovar PR de documentação porque um modelo secundário regrediu
+  # não protege ninguém.
+  # ---------------------------------------------------------------------------
+  matriz-de-modelos:
+    name: Compatibilidade (informativo)
+    runs-on: ubuntu-latest
+    needs: escopo
+    if: needs.escopo.outputs.vazio == 'false' && github.event_name != 'pull_request'
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install --quiet pyyaml
+
+      - name: Rodar a suíte no modelo secundário
+        continue-on-error: true
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+          PROMPTFOO_DISABLE_TELEMETRY: '1'
+          MODELO_SECUNDARIO: openai:gpt-4o-mini
+        run: |
+          set +e
+          {
+            echo "### Compatibilidade por modelo"
+            echo ""
+            echo "Informativo. O gate decide contra o provider de referência dos"
+            echo "configs; esta tabela responde outra pergunta: o prompt sobrevive"
+            echo "num modelo mais fraco?"
+            echo ""
+            echo "| prompt | \`$MODELO_SECUNDARIO\` |"
+            echo "|---|---|"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          for d in $(find devops -name promptfooconfig.yaml -printf '%h\n' | sort); do
+            # Gera um config derivado trocando só o provider. O original não é
+            # tocado: o gate continua sendo o arquivo versionado.
+            python - "$d/promptfooconfig.yaml" <<'PY'
+          import sys, yaml, os
+          cfg = yaml.safe_load(open(sys.argv[1], encoding='utf-8'))
+          cfg['providers'] = [{'id': os.environ['MODELO_SECUNDARIO'],
+                               'config': {'temperature': 0}}]
+          yaml.safe_dump(cfg, open(os.path.join(os.path.dirname(sys.argv[1]),
+                                                '.compat.yaml'), 'w', encoding='utf-8'),
+                         allow_unicode=True, sort_keys=False)
+          PY
+            (cd "$d" && npx --yes promptfoo@0.122.0 eval -c .compat.yaml \
+               --no-cache -j 1 --delay 2000 >/dev/null 2>&1)
+            [ $? -eq 0 ] && s="passa" || s="**reprova**"
+            rm -f "$d/.compat.yaml"
+            echo "| \`$(basename "$d")\` | $s |" >> "$GITHUB_STEP_SUMMARY"
+          done
