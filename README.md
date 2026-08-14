@@ -63,6 +63,14 @@ Ao adicionar um prompt, substituir "Nenhum prompt cadastrado ainda" pela lista:
 - [nome-do-prompt](./<slug-da-categoria>/<slug-do-prompt>/) — o que o prompt faz, em uma linha.
 -->
 
+## Checkpoints do desafio
+
+A pasta [`checkpoints/`](./checkpoints/) **não é uma categoria de prompts** — as
+categorias são as pastas de domínio acima. Ela guarda os documentos de entrega do
+desafio que originou este playbook: para cada checkpoint, o prompt, a execução
+com modelo e output, e a curadoria. É o registro de **como** a biblioteca foi
+construída; a biblioteca em si está em [`devops/`](./devops/).
+
 ## Contribuindo
 
 Antes de adicionar ou alterar um prompt, revisar [`CLAUDE.md`](./CLAUDE.md) — a seção **Manutenção da documentação** lista todos os arquivos que precisam ser atualizados junto com a mudança (este índice incluso).

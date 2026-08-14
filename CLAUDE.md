@@ -17,6 +17,11 @@ Compõe o material dos projetos da pós-graduação em AIOps e Inteligência Art
     README.md    # metadados e documentação do prompt
 ```
 
+> Exceção documentada: `checkpoints/` na raiz **não é uma categoria**. Guarda os
+> documentos de entrega do desafio que originou o playbook (prompt, execução e
+> curadoria de cada checkpoint). Ferramentas que varrem categorias devem
+> ignorá-la; ela não contém `prompt.md`.
+
 Regras:
 - **Categoria** = pasta na raiz (ex.: `engenharia-software/`, `escrita/`, `analise-dados/`). Uma categoria por área de domínio; não aninhar categorias.
 - **Prompt** = subpasta dentro de uma categoria, nomeada em `kebab-case` descrevendo o objetivo do prompt.
