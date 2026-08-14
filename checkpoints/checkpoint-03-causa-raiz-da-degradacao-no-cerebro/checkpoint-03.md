@@ -106,6 +106,17 @@ Sintoma relatado    : {{SINTOMA_RELATADO}}
 
 **Modelo:** Claude Opus 5, temperatura 0.2.
 
+**Por que este modelo.** É a tarefa mais difícil da biblioteca: correlacionar
+três artefatos de fontes diferentes, ordenar eventos no tempo e distinguir causa
+de consequência. Modelo mais fraco lista sintomas — foi exatamente o que o
+`gpt-4o-mini` fez quando o gate do CP09 rodou sobre este mesmo pacote, tirando
+5/8 e parando no heap esgotado. Temperatura 0.2 porque uma análise de incidente
+precisa ser reprodutível: dois SREs rodando o mesmo pacote têm de chegar à mesma
+conclusão. **Privacidade é o critério que domina aqui** — log de produção tem
+hostname, ID de nó e nome de índice que revela tenancy. Por isso o `roteamento`
+no frontmatter exige endpoint com retenção zero e sem treino, e a sanitização é
+upstream (ver curadoria).
+
 **Parâmetros:**
 
 - `SISTEMA` = Cerebro

@@ -95,6 +95,16 @@ mapa.
 **Modelo:** Claude Opus 5, temperatura 0.2. Preenchi o prompt com os três
 parâmetros do enunciado e conduzi o refino.
 
+**Por que este modelo.** Artefato de segurança em que o erro é **sutil e
+silencioso**: um hífen a mais antes do `podSelector` transforma um "E" em "OU" e
+abre o namespace inteiro, e o manifesto aplica sem reclamar. Errar aqui não gera
+exceção, gera brecha. Isso põe qualidade acima de qualquer consideração de custo,
+ainda mais com o loop de verificação exigindo três rodadas. Temperatura 0.2
+porque manifesto é código: a mesma entrada tem de gerar a mesma política.
+**Privacidade:** o mapa de serviços expõe topologia interna (namespaces, labels,
+portas) — não é dado de cliente, mas é reconhecimento de rede, e eu trataria como
+interno em cliente real.
+
 ### v1 (primeira saída)
 
 Política única, já bem melhor que o allow-all, mas com defeitos reais:

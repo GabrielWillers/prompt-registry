@@ -130,6 +130,22 @@ fora da Aegis.
 
 ## Execução — modelo: Claude Sonnet 5
 
+**Por que este modelo, e não o Opus.** Downgrade deliberado. Aqui a tarefa é
+preencher cinco campos a partir de um alerta curto: extração e formatação, não
+raciocínio causal. É o item de **maior volume** da biblioteca — roda toda vez que
+um alerta dispara, não uma vez por incidente —, então custo por token e latência
+pesam de verdade, e a nota sai enquanto o plantonista ainda está lendo o alerta.
+Rodei os três casos no Opus também: a saída foi equivalente, o que confirma que a
+capacidade extra não estava sendo usada. Pagar por ela seria desperdício.
+
+**Privacidade:** os alertas trazem nome de tenant (`stark-industries`,
+`wakanda-systems`), que num cliente real é identificador comercial. É o dado mais
+sensível deste checkpoint e o mais fácil de vazar, porque a nota é gerada dezenas
+de vezes por dia e ninguém revisa cada uma. Em produção eu pseudonimizaria o
+tenant antes do envio (`tenant-A`) e manteria o mapa fora do prompt — a nota não
+precisa do nome real para ser útil ao plantonista, que já sabe qual cliente é
+pelo ID do alerta.
+
 Rodado com `{{MAPA_ESCALONAMENTO}}` vazio nas três entradas, ou seja, usando o
 default embutido.
 

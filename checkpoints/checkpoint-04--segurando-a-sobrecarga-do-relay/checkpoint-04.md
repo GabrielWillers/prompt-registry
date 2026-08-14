@@ -81,6 +81,15 @@ contra as restrições.
 
 **Modelo:** Claude Opus 4.8. Parâmetros preenchidos com o cenário do Relay.
 
+**Por que este modelo.** Decisão de arquitetura é cara de reverter, e o valor
+está em comparar caminhos e enxergar o que cada um sacrifica — raciocínio
+comparativo, o oposto de extração. O volume é o menor de toda a biblioteca: uma
+execução por decisão, talvez uma por trimestre. Com esse volume, custo por token
+é irrelevante e latência não existe como critério; a única variável que importa é
+qualidade do raciocínio. **Privacidade:** o cenário aqui é arquitetura interna e
+número de SLA, sem dado de cliente — é o item de menor sensibilidade do playbook,
+e o único que eu rodaria num provedor sem exigência de retenção zero.
+
 **1. Problema em uma frase**
 Durante rajadas de um cliente grande, a fila única do Relay faz o alerting em tempo real do Sentinel esperar atrás da ingestão em massa do Forge, atrasando alertas com SLA de 60s.
 

@@ -215,6 +215,15 @@ Linguagem imperativa e verificável.
 
 **Modelo:** Claude Opus 5, temperatura 0.2. Os três elos rodados em sequência, com a saída de cada um colada sem edição no seguinte.
 
+**Por que este modelo e esta temperatura.** Numa cadeia, erro no elo 1 envenena
+os elos 2 e 3 — o custo de uma saída ruim não é local, é multiplicado. Isso
+justifica o modelo mais capaz mesmo com três chamadas em vez de uma. A
+temperatura 0.2 é requisito do **contrato de handoff**: os nomes de seção e a
+numeração das invariantes precisam sair iguais toda vez, senão o elo seguinte
+recebe um texto que não casa. Volume baixo (uma migração por vez) torna o custo
+das três chamadas irrelevante. **Privacidade:** o cenário descreve arquitetura
+interna e nomes de sistema, sem dado de cliente.
+
 ### Elo 1 — parâmetros
 
 - `NOME_SISTEMA` = Forge

@@ -18,10 +18,21 @@ contra a Entrada 3 → refino do contrato de saída).
 
 ## Execução
 
-**Modelo:** Claude Opus 5, chat, temperatura padrão. Parâmetros fixos nas três
-rodadas: `NAMESPACE=sentinel-prod`, `CLUSTER=aegis-prod-use1`,
-`JANELA_COLETA=2026-05-13 11:05 BRT`, `CONTEXTO_OPERACIONAL` vazio,
-`POLITICA_ACAO` no default.
+**Modelo:** Claude Opus 5, chat, temperatura padrão.
+
+**Por que este modelo.** A tarefa exige cruzar três fontes (status, eventos e
+logs) e chegar a uma causa sem inventar nada — é raciocínio, não formatação. O
+custo por token é o mais alto da família, mas o volume é baixo: uma execução por
+incidente, não por minuto. E o erro é caro na direção errada — um plantonista
+agindo sobre um diagnóstico inventado às 3h da manhã custa mais que a diferença
+de preço entre modelos. Latência de alguns segundos é irrelevante quando o
+alternativo é o plantonista ler o snapshot na mão. **Privacidade:** o snapshot
+carrega nome de namespace e de pod, que em produção real identificam cliente —
+isso exige endpoint com retenção zero, mesmo critério que apliquei no CP03.
+
+**Parâmetros fixos nas três rodadas:** `NAMESPACE=sentinel-prod`,
+`CLUSTER=aegis-prod-use1`, `JANELA_COLETA=2026-05-13 11:05 BRT`,
+`CONTEXTO_OPERACIONAL` vazio, `POLITICA_ACAO` no default.
 
 ### Entrada 1 — pod reiniciando
 
