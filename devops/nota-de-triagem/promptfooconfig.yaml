@@ -1,0 +1,98 @@
+# yaml-language-server: $schema=https://promptfoo.dev/config-schema.json
+description: nota-de-triagem — nota padronizada de 5 campos a partir de um alerta cru
+
+prompts:
+  - file://prompt.md
+
+providers:
+  - openai:gpt-4o-mini
+  - id: google:gemini-3.1-flash-lite
+    config:
+      # O provider Google não reporta custo para este modelo, e sem isso o
+      # assert de cost falha com erro em vez de avaliar. Preço declarado aqui
+      # (tabela Gemini Flash Lite) para que o gate de custo tenha o que medir.
+      inputCost: 0.0000001 # US$ 0,10 / 1M tokens
+      outputCost: 0.0000004 # US$ 0,40 / 1M tokens
+      # Sem isto o modelo gasta tokens de "thinking" e estoura o gate de 5s
+      # (medido: 6.474ms -> 1.572ms). A tarefa é de formatação determinística,
+      # não de raciocínio: o thinking custava latência sem melhorar a saída.
+      generationConfig:
+        thinkingConfig:
+          thinkingBudget: 0
+
+# Asserts que valem para TODA saída, em todos os casos e em todos os providers.
+defaultTest:
+  vars:
+    # O mapa vazio exercita o caminho do default embutido no prompt.
+    mapa_escalonamento: ''
+    contexto_plataforma: >-
+      Relay: ingestão/barramento de eventos. Forge: pipeline de dados e data
+      warehouse. Sentinel: observabilidade e alerting. Cerebro: indexação e busca.
+  assert:
+    # --- os cinco rótulos obrigatórios da nota ---
+    - type: contains
+      value: 'ALERTA:'
+    - type: contains
+      value: 'IMPACTO:'
+    - type: contains
+      value: 'HIPÓTESE INICIAL:'
+    - type: contains
+      value: 'AÇÃO IMEDIATA:'
+    - type: contains
+      value: 'ESCALAR PARA:'
+
+    # --- o escalonamento aponta para um handle @palavra ---
+    - type: regex
+      value: 'ESCALAR PARA:.*@\w+'
+
+    # --- concisão: no máximo 8 linhas não vazias ---
+    - type: javascript
+      value: |
+        const linhas = String(output).trim().split('\n').filter((l) => l.trim() !== '');
+        if (linhas.length > 8) {
+          return { pass: false, score: 0, reason: `nota com ${linhas.length} linhas (máximo 8)` };
+        }
+        return true;
+
+    # --- limites operacionais: latência e custo fazem parte da qualidade ---
+    - type: latency
+      threshold: 5000 # ms
+    - type: cost
+      threshold: 0.01 # USD
+
+tests:
+  - description: Entrada 1 — Sentinel no teto do autoscaler
+    vars:
+      alerta_cru: >-
+        2026-05-12 14:02:09 UTC [Sentinel] autoscaler hit max replicas (60/60) on sentinel-api,
+        queue depth on Relay growing 2k/min, CPU avg 88%, tenant stark-industries
+        sending 4x baseline volume after onboarding new region
+    assert:
+      - type: contains
+        value: Sentinel
+
+  - description: Entrada 2 — Relay rejeitando ingestão após deploy
+    vars:
+      alerta_cru: >-
+        2026-05-13 03:11:00 UTC [Relay] ingest reject rate 6% for 8min, tenant wakanda-systems,
+        buffer saturated after deploy 02:55
+    assert:
+      - type: contains
+        value: Relay
+      # A hipótese tem de citar o deploy de 02:55 que está no alerta,
+      # e não o "deploy às 09:14" do exemplo de estilo do prompt.
+      - type: contains
+        value: '02:55'
+      - type: not-contains
+        value: '09:14'
+
+  - description: Entrada 3 — Forge com lag de consumer subindo
+    vars:
+      alerta_cru: >-
+        2026-05-13 11:40:22 UTC [Forge] consumer lag 9min and climbing, batch forge-batch-ingest
+        delayed after previous job failure, downstream Sentinel starting to lag
+    assert:
+      - type: contains
+        value: Forge
+      - type: not-contains
+        value: acme-corp
