@@ -78,7 +78,41 @@ Sempre que um prompt ou uma categoria for **incluído ou alterado**, revisar e a
 
 A revisão da documentação faz parte da mesma entrega que a mudança do prompt — não deve ficar para depois.
 
+## Playbook de IA operacional da Aegis
+
+A categoria `devops/` abriga o playbook de IA operacional da Aegis (plataforma
+de observabilidade composta por Relay, Forge, Sentinel e Cerebro). Decisões de
+migração desse playbook para as convenções deste repositório, que valem como
+regra para os próximos prompts:
+
+1. **Todo prompt é parametrizável.** Não entra prompt que sirva a um caso só. Os
+   dados variáveis — snapshot, alerta, artefatos, manifesto — são placeholders
+   `{{...}}` e aparecem em `inputs`. `inputs` é o contrato de parâmetros do
+   prompt, não uma lista decorativa.
+2. **Placeholders em `snake_case` minúsculo**, seguindo o formato
+   `{{nome_variavel}}` da convenção. Prompts que nasceram com `{{MAIÚSCULAS}}`
+   foram normalizados na migração.
+3. **Sem sintaxe de default no placeholder.** Nada de `{{cluster|não informado}}`
+   — o campo `inputs` não representa default. O valor de fallback é descrito na
+   `descricao` do input e tratado no corpo do prompt.
+4. **Provedor e modelo não são parâmetros do prompt.** Injetar o nome do modelo
+   no corpo do prompt não muda o comportamento dele. Modelo, temperatura e
+   exigência de roteamento (endpoint sem retenção, por exemplo) são metadados de
+   execução e ficam no `README.md`, junto do exemplo.
+5. **Cadeias de prompts viram um prompt por pasta.** A regra "um prompt por
+   pasta" vale mesmo quando os prompts formam uma cadeia. O acoplamento é
+   declarado no `README.md` de cada elo (elo anterior / próximo elo) e o
+   contrato de handoff — nomes de seção padronizados, invariantes numeradas —
+   fica escrito no próprio `prompt.md`.
+6. **Pasta nomeada pelo resultado, não pela técnica.** Um prompt de decisão
+   construído com comparação de trade-offs chama-se
+   `decisao-de-arquitetura-com-tradeoffs`, não `tree-of-thought`.
+7. **`Limitações conhecidas` é obrigatória e específica.** Inclui, quando o
+   prompt recebe dado de produção, o que precisa ser sanitizado antes do envio.
+
 ## Git
 
 - Semantic commit, mensagem de uma linha.
 - Escopo do commit costuma ser a categoria (ex.: `feat(escrita): adiciona prompt de revisão de email`).
+- Mudança em prompt existente incrementa o campo `versao` do frontmatter (semver)
+  nos **dois** arquivos, `prompt.md` e `README.md`. Prompt novo nasce em `1.0.0`.
