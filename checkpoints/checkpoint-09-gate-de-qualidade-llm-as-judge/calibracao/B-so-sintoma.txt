@@ -1,0 +1,25 @@
+**Análise**
+O Cerebro apresentou degradação severa na janela de 08:00 às 10:00 UTC.
+
+A causa-raiz é a exaustão do heap da JVM. O heap subiu de 61% para 94% ao longo das duas
+horas e o circuit breaker [parent] disparou em 96%, recusando novas operações. Com o heap
+esgotado, o garbage collector passou a fazer pausas longas (1.8s em old gen) e o sistema
+entrou em colapso.
+
+Sintomas observados:
+- search_p99_ms subiu de 850ms para 6700ms
+- indexed_docs_per_s subiu de 4200 para 12400
+- heap_used_pct subiu de 61% para 94%
+- cache_hit_pct caiu de 74% para 29%
+- write thread pool cheio (200/200), rejeitando bulks
+- buscas retornando resultado parcial (11/12 shards)
+- CircuitBreakingException às 10:01
+
+**Ação recomendada**
+Aumentar o jvm_heap de 8g para 16g. O heap atual está claramente subdimensionado para a
+carga que o cluster recebe, como mostram os 94% de utilização. Também vale aumentar o
+query_cache de 512mb, já que o hit ratio caiu bastante.
+
+**Conclusão**
+O cluster precisa de mais memória. Com o heap dobrado, o circuit breaker não dispara e a
+busca volta ao normal.

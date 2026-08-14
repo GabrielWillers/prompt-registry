@@ -1,0 +1,23 @@
+**Causa-raiz**
+A reindexação agendada para as 02:00 (task 88123) ainda estava em 41% às 09:58, muito
+além dos 90 minutos previstos na configuração. Rodando durante o horário comercial, a
+carga de escrita dela somou-se à ingestão normal e o heap de 8g não deu conta das duas,
+chegando a 94% e disparando o circuit breaker em 96%. A partir daí a busca degradou.
+
+**Cadeia**
+reindex atrasado -> escrita concorrente -> heap saturado -> circuit breaker -> timeouts
+de busca e resultado parcial.
+
+O cache hit caiu para 29% no mesmo período. Isso aparece junto com a subida do heap e
+contribui para a latência, já que menos buscas são servidas do cache e mais precisam ser
+reprocessadas.
+
+**Ação recomendada**
+Pausar a reindexação 88123 imediatamente para liberar o heap. Depois, revisar o
+agendamento do job para que ele não invada o horário comercial — por exemplo, com um
+limite de duração que aborte e reagende. Vale também reavaliar se 8g de heap comportam a
+carga de pico.
+
+**Limitações**
+Não há dados sobre o período entre 02:00 e 08:00, então não é possível dizer por que a
+reindexação ficou tão atrasada.

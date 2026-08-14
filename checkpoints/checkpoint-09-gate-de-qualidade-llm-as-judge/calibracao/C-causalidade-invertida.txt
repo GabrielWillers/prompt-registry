@@ -1,0 +1,18 @@
+**Diagnóstico**
+A causa-raiz da degradação do Cerebro é a queda do cache de query.
+
+O cache_hit_pct caiu de 74% para 29% durante a janela. Com menos buscas atendidas pelo
+cache, cada query passou a ser reprocessada do zero contra os shards, o que aumentou
+drasticamente o consumo de CPU e de memória. Isso explica a subida do heap de 61% para
+94% e, por consequência, o disparo do circuit breaker e a explosão da latência de busca
+de 850ms para 6700ms.
+
+O log confirma: "query cache eviction rate spiking, hit_ratio dropped to 0.29".
+
+A reindexação que aparece nos logs é um processo de rotina agendado para as 02:00 e não
+tem relação com o incidente — ela apenas coincide temporalmente com a janela analisada.
+
+**Ação recomendada**
+Aumentar o query_cache de 512mb para 2gb. Com o cache maior, o hit ratio volta aos 74%
+de baseline, o reprocessamento cai, o heap alivia e a latência normaliza. É uma mudança
+de uma linha no cerebro.yaml e resolve a cadeia inteira na origem.

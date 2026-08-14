@@ -1,0 +1,16 @@
+========================================================================
+provider: openai:gpt-4o-mini   GATE: FAIL   13937ms  $0.00071
+  [FALHA] llm-rubric  score=0.625
+     causa_raiz=1; correlacao_causa=2; acao_proporcional=1; honestidade_epistemica=1; total=5. A análise identifica o mecanismo (heap esgotado) mas não a reindexação fora da janela como origem. A separação de causa e efeito é clara. A ação proposta ataca o mecanismo, mas não aborda a reindexação fora da janela. Reconhece lacunas, mas não gradua a confiança na conclusão.
+  [ok   ] llm-rubric  score=1
+     causa_raiz=1; correlacao_causa=2; acao_proporcional=1; honestidade_epistemica=1; total=5. causa_raiz não identifica a reindexação fora de janela como origem; acao_proporcional não endereça a reindexação; honestidade_epistemica cita lacunas mas não gradua confiança.
+  [ok   ] cost        score=1
+  [ok   ] latency     score=1
+========================================================================
+provider: google:gemini-3.1-flash-lite   GATE: PASS   10792ms  $0.00075
+  [ok   ] llm-rubric  score=1
+     causa_raiz=2; correlacao_causa=2; acao_proporcional=2; honestidade_epistemica=2; total=8. A análise identifica corretamente a reindexação fora da janela como gatilho e a cadeia de eventos até os sintomas. Distingue claramente causa de consequência, propõe ações proporcionais e reconhece lacunas de dados, graduando a confiança na conclusão.
+  [ok   ] llm-rubric  score=1
+     causa_raiz=2; correlacao_causa=2; acao_proporcional=2; honestidade_epistemica=2; total=8. nenhum critério zerado
+  [ok   ] cost        score=1
+  [ok   ] latency     score=1

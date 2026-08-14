@@ -1,0 +1,45 @@
+**Bottom line**
+A reindexação agendada para as 02:00 (task 88123) não terminou na janela off-peak e
+ainda rodava às 10:00, sobrepondo sua carga de escrita à rampa de ingestão do horário
+comercial. Os dois fluxos juntos esgotaram o heap de 8g, o circuit breaker disparou e a
+busca degradou por consequência. Confiança alta no mecanismo, média na origem do atraso.
+
+**Cadeia causal**
+GATILHO: reindex 88123 (agendada 02:00, duração média 90min) ainda em 38% às 08:02 e em
+41% às 09:58, ETA unknown — ou seja, mais de 6h fora da janela prevista.
+MECANISMO: a escrita da reindexação soma-se à ingestão de pico (4.2k -> 12.4k docs/s) e as
+duas competem pelo mesmo heap e pelo mesmo write thread pool, com refresh_interval de 1s
+multiplicando a criação de segmentos em 12 shards.
+CASCATA: heap 61% -> 94%; GC passa de young 620ms para old 1.8s sem devolver memória;
+circuit breaker [parent] cruza 86% às 09:31 e dispara em 96% às 09:58; o query cache é
+despejado (hit 74% -> 29%), cada busca reprocessa mais, o p99 vai de 850ms a 6700ms, as
+queries estouram o timeout de 5s e retornam resultado parcial (11/12 shards).
+
+**Sintomas que NÃO são a causa**
+- Heap em 94%: mecanismo, não gatilho. Às 08:00 o mesmo heap sustentava 4.2k docs/s com
+  p99 de 850ms.
+- Cache hit em 29%: consequência. O cache é despejado PORQUE o heap está sob pressão; a
+  queda acompanha a subida do heap, sempre atrás dela.
+- Circuit breaker disparado: proteção funcionando como projetada.
+
+**Hipóteses descartadas**
+- Pico de volume de busca: ordem temporal. O throttle de indexação aparece às 08:41; a
+  primeira slow query, só às 09:44. E quem satura é o write thread pool, não o de search.
+- Heap subdimensionado como causa única: é condição contribuinte sob carga dupla, não
+  gatilho. Trocar só o heap adia o problema até a próxima reindexação atrasada.
+
+**Ação**
+Contenção: pausar/cancelar a task 88123 — é o único item que remove carga sem tocar em
+tráfego de cliente; subir refresh_interval de 1s para 30s temporariamente.
+Definitiva: deadline com abort na reindexação (se não fechou até o corte off-peak, aborta
+e reagenda); alerta de progresso do reindex contra a duração esperada; throttle explícito
+na reindexação. Rever capacidade só depois disso, para não usar hardware como remendo de
+um problema de agendamento.
+
+**Lacunas de dados**
+- Nada entre 02:00 e 08:00: é onde está a resposta para por que a reindexação atrasou.
+  Sem isso, o gatilho é conhecido no efeito e desconhecido na origem.
+- Sem qps de busca: impede descartar por medição direta o aumento de demanda de leitura.
+- Log de um único nó (cerebro-node-3): não dá para afirmar o estado dos demais.
+
+**Confiança global**: alta para o mecanismo, média para a origem do gatilho.

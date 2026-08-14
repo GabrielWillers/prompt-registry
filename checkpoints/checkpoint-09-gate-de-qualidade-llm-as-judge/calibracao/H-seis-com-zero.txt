@@ -1,0 +1,27 @@
+**Causa-raiz**
+A reindexação agendada para as 02:00 (task 88123) não completou na janela off-peak: os
+logs mostram 38% às 08:02, 40% às 09:20 e ainda 41% às 09:58, contra uma duração média
+esperada de 90 minutos. Rodando durante o horário comercial, sua carga de escrita somou-se
+à rampa de ingestão (4.2k → 12.4k docs/s) e as duas esgotaram o heap de 8g, disparando o
+circuit breaker [parent] em 96% às 09:58:46.
+
+**O que é causa e o que é consequência**
+A exaustão de heap é o mecanismo, não o gatilho — às 08:00 o mesmo heap sustentava 4.2k
+docs/s com p99 de 850ms. A queda do cache hit de 74% para 29% é consequência da eviction
+sob pressão de memória, não causa dela: o log de 09:58:47 registra a eviction disparando
+depois que o heap já estava em 94%. A direção da causa se sustenta na ordem temporal — o
+throttle de indexação aparece às 08:41, uma hora antes da primeira slow query, às 09:44.
+E quem satura é o write thread pool, não o pool de busca.
+
+**Ação**
+Contenção: pausar a task 88123 agora — é o único item que remove carga sem tocar em
+tráfego de cliente — e subir o refresh_interval de 1s para 30s enquanto o heap se recupera.
+Definitiva: deadline com abort na reindexação, para que ela seja cancelada e reagendada se
+não fechar até o corte off-peak, mais alerta de progresso contra a duração esperada. A
+revisão de capacidade fica para depois disso, para não usar hardware como remendo de um
+problema de agendamento.
+
+**Conclusão**
+O diagnóstico está fechado e não há margem para dúvida. Os artefatos cobrem integralmente
+a janela do incidente e sustentam a conclusão de ponta a ponta. Nenhuma coleta adicional é
+necessária: a cadeia causal está inteiramente demonstrada pelos dados disponíveis.

@@ -1,0 +1,63 @@
+fix  humano     juiz        Δ  h.t  j.t    A1    A2   gate  esper
+------------------------------------------------------------------
+A    2/2/2/2    2/2/2/2     0    8    8  PASS  PASS   PASS   PASS
+B    1/0/1/0    0/0/0/0     1    2    0  FAIL  FAIL   FAIL   FAIL
+C    0/0/1/0    0/0/0/0     1    1    0  FAIL  FAIL   FAIL   FAIL
+D    2/2/0/0    2/2/0/0     0    4    4  FAIL  FAIL   FAIL   FAIL
+E    2/1/2/1    2/1/2/1     0    6    6  PASS  PASS   PASS   PASS
+F    0/0/0/0    0/0/0/0     0    0    0  FAIL  FAIL   FAIL   FAIL
+G    1/1/1/1    1/1/1/1     0    4    4  FAIL  PASS   FAIL   FAIL
+H    2/2/2/0    2/2/2/0     0    6    6  PASS  FAIL   FAIL   FAIL
+
+Δ máximo por critério: 1 (meta <=1)   vereditos errados: 0/8
+
+
+===== justificativas do juiz por fixture =====
+
+--- A — excelente (humano 2/2/2/2 = 8, PASS)
+  [llm-rubric] pass=True score=1
+     causa_raiz=2; correlacao_causa=2; acao_proporcional=2; honestidade_epistemica=2; total=8. A análise identifica corretamente a reindexação atrasada como gatilho e a cadeia de eventos até os sintomas. Distingue claramente causa de consequência, com explicações explícitas. As ações propostas são proporcionais e coerentes com o diag
+  [llm-rubric] pass=True score=1
+     causa_raiz=2; correlacao_causa=2; acao_proporcional=2; honestidade_epistemica=2; total=8. nenhum critério zerado
+
+--- B — só sintoma (humano 1/0/1/0 = 2, FAIL)
+  [llm-rubric] pass=False score=0
+     causa_raiz=0; correlacao_causa=0; acao_proporcional=0; honestidade_epistemica=0; total=0. A análise foca na exaustão do heap como causa-raiz, sem identificar a reindexação fora da janela como gatilho. Trata efeitos como causas, como a queda do cache hit. A ação recomendada é desproporcional, focando apenas em aumentar o heap sem
+  [llm-rubric] pass=False score=0
+     causa_raiz=0; correlacao_causa=0; acao_proporcional=0; honestidade_epistemica=0; total=0. Todos os critérios foram zerados.
+
+--- C — causalidade invertida (humano 0/0/1/0 = 1, FAIL)
+  [llm-rubric] pass=False score=0
+     causa_raiz=0; correlacao_causa=0; acao_proporcional=0; honestidade_epistemica=0; total=0. A análise incorretamente identifica a queda do cache de query como a causa-raiz, não reconhecendo a reindexação fora da janela como o gatilho. Trata efeito como causa, não separando corretamente as relações de causa e consequência. A ação r
+  [llm-rubric] pass=False score=0
+     causa_raiz=0; correlacao_causa=0; acao_proporcional=0; honestidade_epistemica=0; total=0. Todos os critérios foram zerados.
+
+--- D — certo mas arrogante (humano 2/2/0/0 = 4, FAIL)
+  [llm-rubric] pass=False score=0.5
+     causa_raiz=2; correlacao_causa=2; acao_proporcional=0; honestidade_epistemica=0; total=4. A análise identifica corretamente a reindexação atrasada como causa-raiz e distingue claramente causa de consequência. No entanto, a ação recomendada é desproporcional, propondo uma reestruturação completa sem abordar diretamente o problema
+  [llm-rubric] pass=False score=0
+     causa_raiz=2; correlacao_causa=2; acao_proporcional=0; honestidade_epistemica=0; total=4. acao_proporcional e honestidade_epistemica zerados.
+
+--- E — limítrofe (humano 2/1/2/1 = 6, PASS)
+  [llm-rubric] pass=True score=0.75
+     causa_raiz=2; correlacao_causa=1; acao_proporcional=2; honestidade_epistemica=1; total=6. A análise identifica corretamente a reindexação atrasada como causa-raiz e descreve a cadeia de eventos. No entanto, trata a queda do cache hit como contribuinte, o que é um erro de correlação. A ação recomendada é proporcional e aborda o g
+  [llm-rubric] pass=True score=1
+     causa_raiz=2; correlacao_causa=1; acao_proporcional=2; honestidade_epistemica=1; total=6. nenhum critério zerado
+
+--- F — prolixo e vazio (humano 0/0/0/0 = 0, FAIL)
+  [llm-rubric] pass=False score=0
+     causa_raiz=0; correlacao_causa=0; acao_proporcional=0; honestidade_epistemica=0; total=0. A análise não identifica a reindexação atrasada como causa, não distingue causa de consequência, não propõe ação específica e não reconhece limitações dos dados.
+  [llm-rubric] pass=False score=0
+     causa_raiz=0; correlacao_causa=0; acao_proporcional=0; honestidade_epistemica=0; total=0. Todos os critérios foram zerados.
+
+--- G — uniforme medíocre (humano 1/1/1/1 = 4, FAIL, score 0.5)
+  [llm-rubric] pass=False score=0.5
+     causa_raiz=1; correlacao_causa=1; acao_proporcional=1; honestidade_epistemica=1; total=4. A análise identifica a saturação de heap como mecanismo, mas não aponta claramente a reindexação fora da janela como gatilho. A separação entre causa e consequência é implícita, e a ação proposta foca mais no mecanismo do que no gatilho. Re
+  [llm-rubric] pass=True score=1
+     causa_raiz=1; correlacao_causa=2; acao_proporcional=1; honestidade_epistemica=1; total=5. A análise não identifica a reindexação fora da janela como origem, trata principalmente o mecanismo (heap esgotado).
+
+--- H — seis com zero (humano 2/2/2/0 = 6, deve FALHAR)
+  [llm-rubric] pass=True score=0.75
+     causa_raiz=2; correlacao_causa=2; acao_proporcional=2; honestidade_epistemica=0; total=6. A análise identifica corretamente a reindexação atrasada como gatilho e a cadeia de eventos até os sintomas. Distingue claramente causa de consequência, sustentando a direção com ordem temporal. A ação proposta é proporcional e aborda o gat
+  [llm-rubric] pass=False score=0
+     causa_raiz=2; correlacao_causa=2; acao_proporcional=2; honestidade_epistemica=0; total=6. honestidade_epistemica zerado.

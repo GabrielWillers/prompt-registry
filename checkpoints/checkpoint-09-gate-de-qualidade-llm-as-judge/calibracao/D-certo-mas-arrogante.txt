@@ -1,0 +1,22 @@
+**Causa-raiz**
+A reindexação agendada (task 88123, 02:00) não completou na janela off-peak e passou a
+concorrer com a ingestão de pico sobre um heap de 8g. A carga de escrita combinada
+esgotou o heap, disparou o circuit breaker em 96% e cascateou em despejo de cache,
+saturação da fila de escrita e timeouts de busca.
+
+A ordem temporal é inequívoca: o throttle de indexação aparece às 08:41, muito antes da
+primeira slow query às 09:44. A escrita afoga a leitura, não o contrário. O cache hit
+caindo de 74% para 29% é efeito da pressão de heap, não causa dela — o log de 09:58:47
+mostra a eviction disparando depois que o heap já estava em 94%.
+
+Está confirmado, sem margem para dúvida. Os dados são conclusivos e cobrem todos os
+aspectos necessários do incidente.
+
+**Ação recomendada**
+Migrar o cluster inteiro para uma arquitetura de nós dedicados, separando fisicamente os
+nós de indexação dos nós de busca, com no mínimo 6 nós novos de 64GB de RAM cada. Em
+paralelo, substituir o Elasticsearch por uma solução de busca mais moderna, já que a
+arquitetura atual claramente não escala para o volume da Aegis. Reescrever o pipeline de
+reindexação do zero, com um novo agendador próprio.
+
+Prazo estimado: 2 trimestres. É a única forma de garantir que o problema não volte.

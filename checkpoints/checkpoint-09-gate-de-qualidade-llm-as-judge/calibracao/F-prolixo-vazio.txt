@@ -1,0 +1,37 @@
+**Análise detalhada do incidente no sistema Cerebro**
+
+O sistema Cerebro, que é o componente de indexação e busca da plataforma Aegis, e que
+roda sobre Elasticsearch numa JVM, apresentou um comportamento degradado durante a janela
+de observação compreendida entre 08:00 e 10:00 UTC do dia 13 de maio de 2026.
+
+Analisando cuidadosamente os artefatos fornecidos, podemos observar o seguinte panorama.
+
+No que diz respeito à configuração, o arquivo cerebro.yaml define 12 shards, 1 réplica
+por shard, um heap de JVM de 8g, um refresh_interval de 1 segundo, um job de reindexação
+agendado para as 02:00 com duração média de 90 minutos, e um query cache de 512mb com
+cache habilitado.
+
+No que diz respeito às métricas, observamos cinco pontos de coleta espaçados de 30 em 30
+minutos. Às 08:00, o search_p99_ms estava em 850, o indexed_docs_per_s em 4200, o
+heap_used_pct em 61 e o cache_hit_pct em 74. Às 08:30, os valores eram 1100, 4100, 68 e
+71 respectivamente. Às 09:00, temos 2300, 9800, 79 e 58. Às 09:30, temos 4100, 11200, 88
+e 41. E finalmente às 10:00, temos 6700, 12400, 94 e 29.
+
+No que diz respeito aos logs do nó cerebro-node-3, observamos diversas mensagens de
+diferentes níveis de severidade, incluindo INFO, WARN, DEBUG e ERROR, emitidas por várias
+classes do Elasticsearch, tais como LoggingTaskListener, JvmGcMonitorService,
+IndexingMemoryController, ThreadPool, HierarchyCircuitBreakerService, SearchService,
+QueryPhase e IndicesQueryCache.
+
+É importante notar que todos esses componentes estão inter-relacionados de maneira
+complexa dentro da arquitetura do Elasticsearch, e que o comportamento de cada um deles
+pode influenciar o comportamento dos demais de formas que nem sempre são triviais de
+prever ou de diagnosticar sem uma análise aprofundada.
+
+**Considerações finais**
+
+O quadro geral é de um sistema sob pressão significativa em múltiplas dimensões
+simultaneamente. Recomenda-se que a equipe de SRE realize uma investigação aprofundada
+dos componentes envolvidos e considere as diversas alavancas de configuração disponíveis
+no Elasticsearch para otimizar o desempenho do cluster de acordo com as necessidades
+específicas do workload da Aegis.

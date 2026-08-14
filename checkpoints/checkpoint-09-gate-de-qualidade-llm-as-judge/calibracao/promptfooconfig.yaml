@@ -1,0 +1,158 @@
+# Harness de CALIBRAÇÃO do juiz — não é o gate de produção.
+# Usa o provider `echo`, então a "saída do modelo" é o texto da fixture:
+# o juiz avalia um texto fixo que eu já pontuei à mão, e a comparação
+# entre as duas notas é o que calibra a rubrica.
+description: Calibração do juiz de causa-raiz contra pontuação humana
+
+prompts:
+  - '{{candidato}}'
+
+providers:
+  - echo
+
+defaultTest:
+  options:
+    provider:
+      id: openai:gpt-4o
+      config:
+        temperature: 0
+    rubricPrompt:
+      - role: system
+        content: |
+          Você é um SRE principal revisando análises de causa-raiz de incidentes.
+          Sua função é PONTUAR uma análise, não reescrevê-la.
+
+          ## O incidente (verdade de referência)
+          Sistema: Cerebro (Elasticsearch), janela 08:00–10:00 UTC de 2026-05-13.
+          Sintoma relatado: buscas lentas e resultados incompletos.
+
+          A causa-raiz real é: a reindexação agendada para as 02:00 (task 88123)
+          não terminou na janela off-peak — ainda estava em 41% às 09:58 — e passou
+          a concorrer com a ingestão de pico do horário comercial. A carga de
+          escrita somada esgotou o heap de 8g, o que disparou o circuit breaker de
+          memória e cascateou em despejo do query cache, saturação da fila de
+          escrita e timeouts de busca com resultado parcial.
+
+          Relações de causa que importam:
+          - A exaustão de heap é MECANISMO, não gatilho. O gatilho é a reindexação
+            fora da janela.
+          - A queda do cache hit (74% → 29%) é CONSEQUÊNCIA da pressão de heap,
+            nunca causa dela.
+          - O circuit breaker disparando é proteção funcionando, não causa.
+          - A escrita se move antes da leitura: o throttle de indexação aparece às
+            08:41 e a primeira slow query só às 09:44.
+          - Os dados NÃO cobrem 02:00–08:00, então por que a reindexação atrasou é
+            desconhecido. Também não há qps de busca, e o log é de um único nó.
+
+          ## Critérios (0 = não atende, 1 = parcial, 2 = atende)
+
+          1. causa_raiz — Aponta a causa real (reindexação travada saturando o
+             heap, levando a circuit breaker, timeouts de busca e queda do cache),
+             e não apenas os sintomas.
+             0 = aponta só sintomas, ou aponta uma causa errada (ex.: culpa o
+                 cache, o volume de busca, ou trata heap pequeno como gatilho);
+             1 = chega ao mecanismo (heap esgotado / circuit breaker) mas NÃO
+                 identifica a reindexação fora de janela como origem;
+             2 = identifica a reindexação atrasada como gatilho E a cadeia até os
+                 sintomas.
+
+          2. correlacao_causa — Separa o que é causa do que é consequência.
+             0 = trata efeito como causa (ex.: cache hit caindo como causa), ou
+                 lista tudo em bloco sem distinguir;
+             1 = a cadeia está na ordem certa, mas algum efeito aparece como
+                 "contribuinte" ou a separação é implícita, não afirmada;
+             2 = afirma explicitamente o que NÃO é causa e por quê, ou sustenta a
+                 direção com ordem temporal / qual métrica se move primeiro.
+
+          3. acao_proporcional — Ação coerente com o diagnóstico, sem sobre nem
+             subdimensionar.
+             0 = desproporcional para cima (reescrever o sistema, trocar de
+                 tecnologia, projeto de meses) ou para baixo a ponto de não tocar
+                 na causa; ou incoerente com o próprio diagnóstico;
+             1 = ação plausível mas que ataca principalmente o mecanismo
+                 (ex.: só aumentar heap) sem endereçar a reindexação;
+             2 = contém o gatilho (pausar/reagendar/limitar a reindexação) e trata
+                 a reincidência, deixando capacidade como passo posterior.
+
+          4. honestidade_epistemica — Reconhece o que os dados não permitem
+             concluir, em vez de fabricar certeza.
+             0 = afirma certeza que os dados não sustentam ("está confirmado",
+                 "os dados são conclusivos"), ou não menciona nenhuma limitação;
+             1 = cita ao menos uma lacuna real (tipicamente o vazio 02:00–08:00)
+                 mas NÃO gradua a confiança da conclusão. Citar uma lacuna e
+                 parar aí é 1, nunca 2 — por mais bem escrita que seja a citação;
+             2 = cita as lacunas E gradua EXPLICITAMENTE a confiança da conclusão
+                 (ex.: "confiança alta no mecanismo, média na origem do gatilho"),
+                 distinguindo o que está sustentado do que é inferência.
+
+          ## Regras de pontuação
+          - Pontue SOMENTE o que está escrito. Não dê crédito por o que a análise
+            "provavelmente quis dizer".
+          - Uma análise não precisa usar as mesmas palavras da verdade de
+            referência. Julgue a substância.
+          - Texto longo não é melhor por ser longo. Texto curto que acerta a
+            cadeia e as lacunas pontua alto.
+
+          ## Sua tarefa nesta chamada
+          {{rubric}}
+
+          ## Formato de saída (JSON estrito, nada além dele)
+          {
+            "reason": "causa_raiz=<0-2>; correlacao_causa=<0-2>; acao_proporcional=<0-2>; honestidade_epistemica=<0-2>; total=<0-8>. <justificativa curta>",
+            "score": <número>,
+            "pass": <true|false>
+          }
+      - role: user
+        content: |
+          Análise de causa-raiz a avaliar:
+
+          {{ output }}
+  assert:
+    # ---------------- O GATE DE QUALIDADE (duas verificações) ----------------
+    # A regra é composta: total >= 6 E nenhum critério zerado. Pedir as duas ao
+    # mesmo juiz, numa chamada só, NÃO funciona — ele devolveu score 0.75 e
+    # pass=true para uma saída 2/2/2/0, deixando passar exatamente o caso que a
+    # regra existe para barrar. Separado em dois asserts, cada chamada tem uma
+    # conta trivial e o promptfoo faz o "E" entre elas.
+
+    # (1) nota total no corte
+    - type: llm-rubric
+      threshold: 0.75 # 6/8
+      value: |
+        Pontue os quatro critérios, some o total (0 a 8) e devolva:
+        - score = total / 8, SEMPRE, sem exceção e sem nenhuma outra condição;
+        - pass = (total >= 6).
+        Não aplique nenhuma regra sobre critérios zerados nesta chamada.
+
+    # (2) nenhum critério zerado
+    - type: llm-rubric
+      threshold: 1
+      value: |
+        Pontue os quatro critérios e responda APENAS a esta pergunta:
+        algum dos quatro recebeu nota 0?
+        - Se SIM  -> score = 0, pass = false.
+        - Se NÃO  -> score = 1, pass = true.
+        No reason, liste as quatro notas e diga qual(is) foi(ram) zerado(s),
+        ou escreva "nenhum critério zerado".
+
+tests:
+  - description: 'A — excelente (humano 2/2/2/2 = 8, PASS)'
+    vars: { candidato: file://A-excelente.txt }
+  - description: 'B — só sintoma (humano 1/0/1/0 = 2, FAIL)'
+    vars: { candidato: file://B-so-sintoma.txt }
+  - description: 'C — causalidade invertida (humano 0/0/1/0 = 1, FAIL)'
+    vars: { candidato: file://C-causalidade-invertida.txt }
+  - description: 'D — certo mas arrogante (humano 2/2/0/0 = 4, FAIL)'
+    vars: { candidato: file://D-certo-mas-arrogante.txt }
+  - description: 'E — limítrofe (humano 2/1/2/1 = 6, PASS)'
+    vars: { candidato: file://E-limitrofe.txt }
+  - description: 'F — prolixo e vazio (humano 0/0/0/0 = 0, FAIL)'
+    vars: { candidato: file://F-prolixo-vazio.txt }
+  # Saída real do gpt-4o-mini reprovada pelo gate: o caso que faltava —
+  # nota uniformemente parcial, sem nenhum critério zerado.
+  - description: 'G — uniforme medíocre (humano 1/1/1/1 = 4, FAIL, score 0.5)'
+    vars: { candidato: file://G-uniforme-mediocre.txt }
+  # O caso crítico do gate: total 6 (atinge o corte) MAS com um critério zerado.
+  # Tem de REPROVAR. Se passar, a regra "nenhum critério zerado" é decorativa.
+  - description: 'H — seis com zero (humano 2/2/2/0 = 6, deve FALHAR)'
+    vars: { candidato: file://H-seis-com-zero.txt }

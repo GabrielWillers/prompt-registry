@@ -1,0 +1,35 @@
+
+### nota-de-triagem
+|      | provider           | caso                                     |  latência |     custo |
+|------|--------------------|------------------------------------------|-----------|-----------|
+| PASS | gpt-4o-mini        | Entrada 1 — Sentinel no teto do autoscal |    3929ms | $0.000243 |
+| PASS | gemini-3.1-flash-lite | Entrada 1 — Sentinel no teto do autoscal |    2522ms | $0.000184 |
+| PASS | gpt-4o-mini        | Entrada 2 — Relay rejeitando ingestão ap |    1604ms | $0.000238 |
+| PASS | gemini-3.1-flash-lite | Entrada 2 — Relay rejeitando ingestão ap |    1118ms | $0.000171 |
+| PASS | gpt-4o-mini        | Entrada 3 — Forge com lag de consumer su |    2927ms | $0.000231 |
+| PASS | gemini-3.1-flash-lite | Entrada 3 — Forge com lag de consumer su |    1178ms | $0.000173 |
+  -> 6/6 passaram
+
+### triagem-de-pods
+|      | provider           | caso                                     |  latência |     custo |
+|------|--------------------|------------------------------------------|-----------|-----------|
+| FAIL | gpt-4o-mini        | Entrada 1 — pod reiniciando (OOMKill no  |    7380ms | $0.000308 |
+| PASS | gemini-3.1-flash-lite | Entrada 1 — pod reiniciando (OOMKill no  |    3085ms | $0.000371 |
+| FAIL | gpt-4o-mini        | Entrada 2 — pods que não sobem (tag inex |   10310ms | $0.000395 |
+| FAIL | gemini-3.1-flash-lite | Entrada 2 — pods que não sobem (tag inex |   12890ms | $0.000428 |
+| FAIL | gemini-3.1-flash-lite | Entrada 3 — tudo saudável (não pode inve |    7114ms | $0.000232 |
+| PASS | gpt-4o-mini        | Entrada 3 — tudo saudável (não pode inve |    2481ms | $0.000204 |
+    FALHA [gpt-4o-mini / Entrada 1 — pod reiniciando (OOMKill no ] latency: Latency 7380ms is greater than threshold 5000ms
+    FALHA [gpt-4o-mini / Entrada 2 — pods que não sobem (tag inex] latency: Latency 10310ms is greater than threshold 5000ms
+    FALHA [gemini-3.1-flash-lite / Entrada 2 — pods que não sobem (tag inex] latency: Latency 12890ms is greater than threshold 5000ms
+    FALHA [gemini-3.1-flash-lite / Entrada 3 — tudo saudável (não pode inve] latency: Latency 7114ms is greater than threshold 5000ms
+  -> 2/6 passaram
+
+### networkpolicy-sentinel
+|      | provider           | caso                                     |  latência |     custo |
+|------|--------------------|------------------------------------------|-----------|-----------|
+| FAIL | gpt-4o-mini        | Manifesto allow-all do Sentinel + padrão |   15478ms | $0.000616 |
+| PASS | gemini-3.1-flash-lite | Manifesto allow-all do Sentinel + padrão |    2961ms | $0.000434 |
+    FALHA [gpt-4o-mini / Manifesto allow-all do Sentinel + padrão] latency: Latency 15478ms is greater than threshold 5000ms
+    FALHA [gpt-4o-mini / Manifesto allow-all do Sentinel + padrão] javascript: namespaceSelector com label inventada: name
+  -> 1/2 passaram

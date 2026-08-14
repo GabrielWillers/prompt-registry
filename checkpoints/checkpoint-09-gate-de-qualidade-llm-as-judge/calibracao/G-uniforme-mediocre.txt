@@ -1,0 +1,40 @@
+1. **Bottom line**: A causa-raiz da degradação de desempenho no sistema Cerebro foi a saturação da memória heap, resultando em rejeição de requisições e lentidão nas buscas. Nível de confiança: alta.
+
+2. **Linha do tempo correlacionada**:
+   - **08:00 UTC**: 
+     - Métrica: `search_p99_ms = 850`, `heap_used_pct = 61`, `cache_hit_pct = 74`
+     - Log: Nenhum evento crítico.
+   - **08:30 UTC**: 
+     - Métrica: `search_p99_ms = 1100`, `heap_used_pct = 68`, `cache_hit_pct = 71`
+     - Log: Nenhum evento crítico.
+   - **09:00 UTC**: 
+     - Métrica: `search_p99_ms = 2300`, `heap_used_pct = 79`, `cache_hit_pct = 58`
+     - Log: `WARN [gc][old] duration [1.1s]` (09:12:48) - coleta de lixo.
+   - **09:30 UTC**: 
+     - Métrica: `search_p99_ms = 4100`, `heap_used_pct = 88`, `cache_hit_pct = 41`
+     - Log: `WARN [parent] usage [6.9gb/8gb] (86%)` (09:31:17) - próximo do limite.
+   - **10:00 UTC**: 
+     - Métrica: `search_p99_ms = 6700`, `heap_used_pct = 94`, `cache_hit_pct = 29`
+     - Log: `ERROR CircuitBreakingException: [parent] Data too large` (10:01:12) - limite de memória excedido.
+
+3. **Cadeia causal**:
+   - Gatilho: Aumento na carga de trabalho devido ao reindexing (iniciado às 02:00, conforme `reindex_job` na config).
+   - Mecanismo: Saturação da memória heap, levando a rejeições de requisições e lentidão nas buscas.
+   - Sintomas: Buscas lentas e resultados incompletos.
+
+4. **Causa-raiz**: A saturação da memória heap (94% em 10:00 UTC) causou a rejeição de requisições e lentidão nas buscas, evidenciado pelo erro de `CircuitBreakingException` (10:01:12).
+
+5. **Sintomas que NÃO são a causa**:
+   - O aumento no tempo de busca (p99) não é a causa, mas sim um sintoma da saturação da memória heap e da rejeição de requisições. A causa raiz é a saturação da memória, não o tempo de busca em si.
+
+6. **Hipóteses alternativas descartadas**:
+   - **Hipótese de falha de hardware**: Não há evidências de falhas de hardware nos logs. A degradação é consistente com a saturação de memória.
+   - **Hipótese de configuração inadequada**: A configuração do cluster parece adequada, mas a carga de trabalho (reindexing) excedeu a capacidade do sistema, levando à saturação.
+
+7. **Ação**:
+   - **Contenção imediata**: Monitorar e limitar a carga de trabalho de reindexing durante horários de pico.
+   - **Correção definitiva**: Aumentar a memória heap disponível ou otimizar a configuração do cluster para suportar cargas de trabalho mais altas.
+
+8. **Lacunas de dados**: Não há informações sobre a carga de trabalho exata durante o reindexing ou detalhes sobre a distribuição de requisições, o que poderia ajudar a entender melhor o impacto.
+
+9. **Confiança global**: Alta. Aumentaria com dados adicionais sobre a carga de trabalho e a performance do sistema antes e durante o reindexing.
