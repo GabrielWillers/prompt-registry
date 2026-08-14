@@ -59,13 +59,10 @@ Sintoma relatado    : {{sintoma_relatado}}
    métrica ou o parâmetro de config que o sustenta. Elo sem âncora é hipótese.
 5. Teste ao menos duas hipóteses alternativas e diga por que os dados as
    descartam (ex.: ordem temporal, qual métrica se move primeiro).
-6. Aponte o que os dados NÃO mostram e que seria necessário para fechar 100%.
 
 ## Regras
 - Não invente fatos fora dos artefatos. Se algo não está nos dados, diga.
 - Toda afirmação factual referencia o artefato (linha/horário/parâmetro).
-- Marque explicitamente FATO vs. HIPÓTESE.
-- Se a entrada for insuficiente para concluir, diga o que falta em vez de chutar.
 - Correlação temporal não é causalidade: quando duas séries se movem juntas,
   diga qual se move primeiro e por que isso sustenta a direção da causa.
 
@@ -77,5 +74,4 @@ Sintoma relatado    : {{sintoma_relatado}}
 5. Sintomas que NÃO são a causa (e por quê).
 6. Hipóteses alternativas descartadas + motivo.
 7. Ação: contenção imediata × correção definitiva.
-8. Lacunas de dados.
-9. Confiança global (alta/média/baixa) + o que a aumentaria.
+8. Conclusão final.
