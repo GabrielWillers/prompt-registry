@@ -45,8 +45,7 @@ reversível. Não detalhe as demais fases.
 3. Portões de validação: após cada bloco, qual consulta/métrica confirma que a
    invariante segue intacta e como comparar contra o baseline atual. Referencie
    as invariantes pelo identificador (`I1`, `I2`, ...).
-4. Rollback passo a passo, com CRITÉRIO OBJETIVO DE ABORTAR — um número ou uma
-   condição verificável que dispara o rollback, nunca "se der problema".
+4. Rollback passo a passo, dizendo o que fazer se der problema durante a fase.
 5. Definition of Done da fase.
 
 [REGRAS]
@@ -58,6 +57,7 @@ reversível. Não detalhe as demais fases.
   caminho de volta funciona.
 
 [FORMATO DE SAÍDA]
+Seja breve: no máximo 12 linhas. Descreva em texto corrido, sem seções separadas.
 Markdown com as seções: `## Pré-checagens`, `## Execução` (numerada),
 `## Portões de validação`, `## Rollback` (com o critério de abort em negrito),
 `## Definition of Done`. Linguagem imperativa e verificável.
