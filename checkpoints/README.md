@@ -20,6 +20,7 @@ A biblioteca em si vive em [`devops/`](../devops/). Estes documentos contam
 | 07 | [A biblioteca vira código](./checkpoint-07-a-biblioteca-vira-codigo/) | Migração dos prompts para as convenções deste repositório |
 | 08 | [Testes determinísticos com promptfoo](./checkpoint-08-testes-deterministicos-com-promptfoo/) | 3 `promptfooconfig.yaml` + execução real dos evals |
 | 09 | [Gate de qualidade com LLM-as-judge](./checkpoint-09-gate-de-qualidade-llm-as-judge/) | Rubrica 0–8, juiz calibrado contra pontuação humana |
+| 10 | [O playbook em produção contínua](./checkpoint-10-o-playbook-em-producao-continua/) | Cobertura nos 8 prompts + pipeline em GitHub Actions barrando regressão |
 
 ## Como ler
 

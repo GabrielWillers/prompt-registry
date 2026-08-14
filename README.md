@@ -9,9 +9,9 @@
 >   `promptfooconfig.yaml`.
 > - **As entregas dos checkpoints** — prompt, execução com modelo e output, e
 >   curadoria de cada um, em [`checkpoints/`](./checkpoints/).
-> - **Testes** — 4 prompts têm suíte executável: 3 determinísticos (CP08) e 1
->   com gate de qualidade por LLM-as-judge (CP09). Veja
->   [como rodar](#rodando-os-testes).
+> - **Testes** — os 8 prompts têm suíte executável, e o pipeline em
+>   [GitHub Actions](./.github/workflows/playbook.yml) roda a cada PR e push,
+>   barrando regressão. Veja [como rodar](#rodando-os-testes).
 
 
 Coleção de prompts em Markdown organizados por categoria/área de domínio. Cada prompt vive em sua própria pasta, contendo o arquivo `prompt.md` (texto puro, pronto para copiar e colar) e um `README.md` com metadados, variáveis e exemplos de uso.
