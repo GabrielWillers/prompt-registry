@@ -32,7 +32,7 @@ Abriga o **playbook de IA operacional da Aegis** — 8 prompts de plantão, diag
 
 - [triagem-de-pods](./devops/triagem-de-pods/) — transforma um snapshot estático de um namespace Kubernetes em triagem com causa provável por pod e próxima ação do plantão.
 - [nota-de-triagem](./devops/nota-de-triagem/) — converte um alerta bruto de monitoramento na nota de triagem padronizada de cinco campos usada na passagem de turno.
-- [causa-raiz-de-degradacao](./devops/causa-raiz-de-degradacao/) — cruza configuração, métricas e logs de uma janela de incidente para chegar à causa-raiz com cadeia causal ancorada em evidência.
+- [causa-raiz](./devops/causa-raiz/) — cruza configuração, métricas e logs de uma janela de incidente para chegar à causa-raiz com cadeia causal ancorada em evidência.
 - [decisao-de-arquitetura-com-tradeoffs](./devops/decisao-de-arquitetura-com-tradeoffs/) — compara caminhos alternativos contra restrições duras e brandas antes de recomendar, expondo o que cada opção sacrifica.
 - [diagnostico-de-acoplamento-para-migracao](./devops/diagnostico-de-acoplamento-para-migracao/) — mapeia acoplamentos, invariantes e falhas silenciosas de um sistema antes de qualquer proposta de migração _(elo 1 de 3)_.
 - [plano-faseado-de-migracao](./devops/plano-faseado-de-migracao/) — quebra uma migração em fases incrementais e reversíveis a partir do diagnóstico, com critério de saída e rollback por fase _(elo 2 de 3)_.

@@ -134,9 +134,27 @@ Regras:
 - Quando o prompt produz saída em seções, escope o assert à seção certa. Um
   `not-contains` sobre a saída inteira reprova prompt correto que cita a própria
   regra no bloco de autoverificação.
-- Prompt de **saída aberta** (causa-raiz, decisão, migração) não entra aqui: não
-  há resposta única verificável por regex. Esses ficam para a camada de
-  julgamento.
+- Prompt de **saída aberta** (causa-raiz, decisão, migração) não se testa por
+  regex: usa **LLM-as-judge** no mesmo `promptfooconfig.yaml`, com rubrica de
+  critérios em escala fixa e corte declarado.
+
+### Gate por LLM-as-judge
+
+- O juiz é um modelo **diferente e mais capaz** que os avaliados, em temperatura
+  0. Modelo que se autoavalia infla a própria nota.
+- A rubrica define **âncoras por nota** (o que é 0, o que é 1, o que é 2) em
+  termos observáveis, e carrega a verdade de referência do caso. Sem âncoras o
+  juiz pontua por impressão e a nota vira ruído.
+- **Uma pergunta por assert.** O juiz pontua critérios bem e calcula regras
+  compostas mal. Regra do tipo "total >= 6 E nenhum critério zerado" vira dois
+  asserts, e o promptfoo faz o E entre eles — a lógica composta fica no test
+  runner, que é determinístico.
+- Calibre contra pontuação humana antes de confiar no gate: escreva as saídas
+  candidatas, pontue à mão, rode o juiz e ajuste até a diferença ficar em no
+  máximo 1 ponto por critério. Inclua o caso **adversarial** que ataca a regra
+  do gate — é ele que revela se a regra é real ou decorativa.
+- Um gate de julgamento é **teste de regressão do prompt**, não avaliador
+  genérico: a verdade de referência é escrita à mão por caso.
 
 ## Git
 

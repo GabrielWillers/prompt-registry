@@ -30,7 +30,7 @@ parâmetro — nenhum serve a um caso só.
 
 - [triagem-de-pods](./triagem-de-pods/) — **[testado]** transforma um snapshot estático de um namespace Kubernetes em triagem com causa provável por pod e próxima ação do plantão.
 - [nota-de-triagem](./nota-de-triagem/) — **[testado]** converte um alerta bruto de monitoramento na nota de triagem padronizada de cinco campos usada na passagem de turno.
-- [causa-raiz-de-degradacao](./causa-raiz-de-degradacao/) — cruza configuração, métricas e logs de uma janela de incidente para chegar à causa-raiz com cadeia causal ancorada em evidência.
+- [causa-raiz](./causa-raiz/) — **[testado: LLM-judge]** cruza configuração, métricas e logs de uma janela de incidente para chegar à causa-raiz com cadeia causal ancorada em evidência.
 
 ### Decisão de arquitetura
 
